@@ -13,6 +13,8 @@ socket.listen(1)
 # accepts first connection
 newSocket, address = socket.accept()
 
+print('Connected with: ', address)
+
 # keeps the connection and message trading until client decides to close it
 while True:
     message = newSocket.recv(1024)

@@ -9,6 +9,8 @@ socket = socket.socket()
 # connects with server
 socket.connect((HOST, PORT))
 
+print('Connected with echo server!\nType the message to send it to server.\nTo close the connection, send \'close\'.')
+
 # waits for user input and transmits it to server until user decides to close the connection
 while True:
     message: str = input()
