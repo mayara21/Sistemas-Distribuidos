@@ -37,35 +37,37 @@ def main():
     # awaits for a connection and stablishes a maximum of 5 pending connection
     socket.listen(5)
 
-    # accepts first connection
-    new_socket, address = socket.accept()
-
-    print('Connected with: ', address)
-
     # keeps the connection and message trading until client decides to close it
     while True:
-        file_name = new_socket.recv(4096)
+        # accepts first connection
+        new_socket, address = socket.accept()
 
-        if not file_name: 
-            break
+        print('Connected with: ', address)
 
-        try:
-            new_file_name = str(file_name, encoding='utf-8')
-            txt_file = open(new_file_name, 'r', encoding='utf-8')
-            content = txt_file.read()
-            txt_file.close()
+        while True:
+            file_name = new_socket.recv(4096)
+
+            if not file_name: 
+                break
+
+            try:
+                new_file_name = str(file_name, encoding='utf-8')
+                txt_file = open(new_file_name, 'r', encoding='utf-8')
+                content = txt_file.read()
+                txt_file.close()
+                
+                dictionary = text_processing(content)
+                top_itens = sort_top_itens(dictionary)
             
-            dictionary = text_processing(content)
-            top_itens = sort_top_itens(dictionary)
+                data = json.dumps(top_itens, ensure_ascii=False)
+                new_socket.send(data.encode())
+
+            except FileNotFoundError:
+                new_socket.send(ERROR_MESSAGE.encode('utf-8'))
+
+        # closes connection socket
+        new_socket.close()
         
-            data = json.dumps(top_itens, ensure_ascii=False)
-            new_socket.send(data.encode())
-            
-        except FileNotFoundError:
-            new_socket.send(ERROR_MESSAGE.encode('utf-8'))
-
-    # closes connection and main socket
-    new_socket.close()
     socket.close()
 
 if __name__ == "__main__":
