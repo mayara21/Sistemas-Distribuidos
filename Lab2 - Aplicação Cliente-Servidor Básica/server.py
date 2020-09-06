@@ -1,4 +1,5 @@
 import socket as sock
+import json
 
 HOST: str = ''
 PORT: int = 5000
@@ -43,7 +44,7 @@ def main():
 
     # keeps the connection and message trading until client decides to close it
     while True:
-        file_name = new_socket.recv(1024)
+        file_name = new_socket.recv(4096)
 
         if not file_name: 
             break
@@ -52,11 +53,14 @@ def main():
             new_file_name = str(file_name, encoding='utf-8')
             txt_file = open(new_file_name, 'r', encoding='utf-8')
             content = txt_file.read()
+            txt_file.close()
+            
             dictionary = text_processing(content)
             top_itens = sort_top_itens(dictionary)
-            print(top_itens)
-            txt_file.close()
-            new_socket.send(b'tudo certo')
+        
+            data = json.dumps(top_itens, ensure_ascii=False)
+            new_socket.send(data.encode())
+            
         except FileNotFoundError:
             new_socket.send(ERROR_MESSAGE.encode('utf-8'))
 
