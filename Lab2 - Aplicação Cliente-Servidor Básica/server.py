@@ -11,8 +11,10 @@ def text_processing(content: str):
     dictionary = {}
 
     for word in content.lower().split(" "):
+
         # removes ponctuation
-        word = word.replace(".","").replace(",","").replace(":","").replace("\"","").replace("!","").replace("?","").replace("*","")
+        if word in ['!', '.', ',', ';', '@', '#', '$', '%', '^', '~', '&', '(', ')', '-', '+', '=', '_', '\"', '\'', ':', '>', '<', '?', '/', '\\', '|', '', '\n', '[', ']', '{', '}']:
+            continue
         
         if word not in dictionary:
             dictionary[word] = 1
