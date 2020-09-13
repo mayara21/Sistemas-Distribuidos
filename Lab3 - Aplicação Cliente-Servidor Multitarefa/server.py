@@ -4,10 +4,15 @@ import sys
 import select
 import multiprocessing
 
+# stablishes server location
 HOST: str = ''
 PORT: int = 5000
+
+# constants
 ERROR_MESSAGE: str = "File not found."
 TOP_ITENS_SIZE: int = 10
+
+# defines list of I/O the server is interested in (including the standard input)
 inputs = [sys.stdin]
 
 # function for counting the words on file content, using a dictionary
@@ -42,7 +47,7 @@ def init_server():
     socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
     socket.bind((HOST, PORT))
 
-    # awaits for a connection and stablishes a maximum of 1 pending connection
+    # waits for a connection and stablishes a maximum of 5 pending connection
     socket.listen(5)
 
     # sets socket to non-blocking mode
@@ -53,11 +58,13 @@ def init_server():
 
     return socket
 
+# accepts connection requests from a client
 def accept_conection(socket):
     client_sock, address = socket.accept()
 
     return client_sock, address
 
+# deals with the connection with a client, receiving messages and sending responses to the client
 def serve(client_sock, address):
     # keeps the connection and message trading until client decides to close it
     while True:
@@ -94,30 +101,31 @@ def serve(client_sock, address):
             client_sock.send(ERROR_MESSAGE.encode('utf-8'))
 
 def main():
-    clients = []
+    clients = [] # saves the created processes to join them
     socket = init_server()
     print('Server Ready...\nType close to terminate server execution')
     
     while True:
+        # awaits any inputs of interest 
         r, w, err = select.select(inputs, [], [])
         for read in r:
-            if read == socket: #new client connection
+            if read == socket: # new client connection request
                 client_sock, address = accept_conection(socket)
                 print('Connected with: ', address)
 
                 client = multiprocessing.Process(target=serve, args=(client_sock, address))
                 client.start()
-                clients.append(client)
-            elif read == sys.stdin: #command from terminal
+
+                clients.append(client) # saves process reference to use with join()
+
+            elif read == sys.stdin: # command from terminal
                 cmd = input()
                 if cmd == 'close':
-                    for c in clients:
+                    for c in clients: # waits for all the process to end
                         c.join()
-                    socket.close()
+
+                    socket.close() # closes main socket
                     sys.exit()
-
-
-    socket.close()
 
 if __name__ == "__main__":
     main()
