@@ -8,12 +8,12 @@ from user import User
 from request import Request
 
 HOST: str = ''
-PORT: int = 6000
+PORT: int = 7000
 
 ERROR_MESSAGE: str = "Name already being used."
 
 inputs = [sys.stdin]
-user_list = ["Maria", "Joao"]
+user_list = []
 
 
 def init_server():
@@ -23,7 +23,6 @@ def init_server():
     socket.listen(5)
     socket.setblocking(False)
 
-    # includes socket in list of inputs that should be listened to
     inputs.append(socket)
 
     return socket
@@ -32,23 +31,37 @@ def init_server():
 def accept_conection(socket):
     return socket.accept()
 
+def unpack_user_message(msg: bytearray):
+    user_ip = ''
+
+    for i in range(16, 19):
+        user_ip += str(struct.unpack('=B', msg[i:i + 1])[0]) + '.'
+    
+    user_ip += str(struct.unpack('=B', msg[19:20])[0])
+
+    user_name = str(struct.unpack('=16s', msg[:16])[0], encoding='utf-8')
+    user_port = int((struct.unpack('=H', msg[20:22])[0])) 
+    print(user_name)
+    print(user_port)
+    print(user_ip)
+
 
 def serve(client_sock, address):
     while True:
-        name = client_sock.recv(4096)
+        user = client_sock.recv(4096)
 
-        if not name:
+        if not user:
             print('> Client ' + str(address) + ' disconnected') 
             client_sock.close()
             return
 
-        name = str(name, encoding='utf-8')
+        unpack_user_message(user)
 
-        if name == 'list':
+        if user == 'list':
             data = json.dumps(user_list, ensure_ascii=False)
             client_sock.sendall(data.encode())
 
-        if name.capitalize() in user_list:
+        if user.capitalize() in user_list:
             client_sock.sendall(ERROR_MESSAGE.encode('utf-8'))
                 
         client_sock.sendall(b'OK')
