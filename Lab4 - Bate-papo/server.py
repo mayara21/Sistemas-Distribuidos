@@ -5,6 +5,7 @@ import socket as sock
 import struct
 import sys
 from user import User
+from request import Request
 
 HOST: str = ''
 PORT: int = 6000
@@ -43,13 +44,15 @@ def serve(client_sock, address):
 
         name = str(name, encoding='utf-8')
 
+        if name == 'list':
+            data = json.dumps(user_list, ensure_ascii=False)
+            client_sock.sendall(data.encode())
+
         if name.capitalize() in user_list:
             client_sock.sendall(ERROR_MESSAGE.encode('utf-8'))
                 
-        print('> Client ' + str(address) + ' requested list')
+        client_sock.sendall(b'OK')
         
-        data = json.dumps(user_list, ensure_ascii=False)
-        client_sock.sendall(data.encode())
 
 
 def main():

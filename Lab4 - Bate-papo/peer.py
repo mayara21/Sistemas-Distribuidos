@@ -2,6 +2,7 @@ import json
 import socket as sock
 import select
 from user import User
+from request import Request
 
 SERVER_HOST: str = 'localhost'
 SERVER_PORT: int = 6000
@@ -25,15 +26,26 @@ def main():
 
         received_message = socket.recv(4096)
 
-        print(str(received_message, encoding='utf-8'))
+        status = str(received_message, encoding='utf-8')
 
-        #try:
-        #    res = json.loads(str(received_message, encoding='utf-8'))
-        #    print(res)
+        if (status == "OK"): break
 
-        #except json.decoder.JSONDecodeError:
-        #    print(str(received_message, encoding='utf8'))
+        print(status)
 
+
+    while True:
+        request: str = input("What? ")
+
+        if (request.lower() == 'close'): 
+            break
+        
+        print(request)
+        if (request == 'list'):
+            socket.sendall(b'list')
+
+            user_list = socket.recv(4096)
+
+            print(str(user_list, encoding='utf-8'))
 
     socket.close()
 
