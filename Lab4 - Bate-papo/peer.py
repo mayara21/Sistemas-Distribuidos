@@ -5,9 +5,10 @@ import sys
 import struct
 from user import User
 from request import Request
+from status import Status
 
 SERVER_HOST: str = '127.0.0.1'
-SERVER_PORT: int = 6000
+SERVER_PORT: int = 7000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
 LISTENER_SOCKET_PORT: int = 7000
@@ -29,37 +30,38 @@ def structure_user_message(name: str):
 
     return (bytes_method + bytes_name + bytes_ip + bytes_port)
 
+def finish(socket):
+    socket.close()
+
 
 def main():
     socket = sock.socket()
     socket.connect((SERVER_HOST, SERVER_PORT))
 
-
     while True:
-        name: str = input('Enter the name you want to use in the chat: ')
+        while True:
+            name: str = input('Enter the name you want to use in the chat: ')
 
-        if (name.lower() == 'close'): 
-            break
+            if (name.lower() == 'close'): 
+                finish(socket)
+            
+            connect_chat_request = structure_user_message(name)
+            socket.sendall(connect_chat_request)
 
-        
-        connect_chat_request = structure_user_message(name)
-        
-        socket.sendall(connect_chat_request)
+            connection_response = socket.recv(4096)
+            
+            status = int(struct.unpack('=B', connection_response[8:9])[0])
 
-        received_message = socket.recv(4096)
+            if status == Status.OK.value:
+                break
+            else:
+                error_message = str(struct.unpack('=256s', connection_response[9:265])[0], encoding=ENCODING).strip('\x00')
+                print(error_message)
 
-        status = str(received_message, encoding=ENCODING)
-
-        if (status == "OK"): break
-
-        print(status)
-
-
-    while True:
         request: str = input("What? ")
 
         if (request.lower() == 'close'): 
-            break
+            finish(socket)
         
         print(request)
         if (request == 'list'):
@@ -69,7 +71,6 @@ def main():
 
             print(str(user_list, encoding=ENCODING))
 
-    socket.close()
 
 if __name__ == "__main__":
     main()

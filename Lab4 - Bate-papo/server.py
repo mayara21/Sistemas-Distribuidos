@@ -6,14 +6,15 @@ import struct
 import sys
 from user import User
 from request import Request
+from status import Status
 
 HOST: str = ''
-PORT: int = 6000
+PORT: int = 7000
 
-ERROR_MESSAGE: str = "Name already being used."
+ENCODING: str = 'utf-8'
 
 inputs = [sys.stdin]
-user_list = []
+user_list = [User('ana', '', 0)]
 
 
 def init_server():
@@ -39,17 +40,43 @@ def unpack_user_message(msg: bytearray):
     
     user_ip += str(struct.unpack('=B', msg[19:20])[0])
 
-    user_name = str(struct.unpack('=16s', msg[:16])[0], encoding='utf-8')
+    user_name = str(struct.unpack('=16s', msg[:16])[0], encoding=ENCODING)
     user_name = user_name.strip('\x00')
 
     user_port = int((struct.unpack('=H', msg[20:22])[0]))
 
-    user = User(user_name, user_ip, user_port)
+    new_user: User = User(user_name, user_ip, user_port)
 
-    if user.name == 'ana':
-        print(user.name)
+    return new_user
 
+def send_error_response(client_sock, request_type, error_message):
+    method_bytes: bytes = struct.pack('=8s', request_type.encode(ENCODING))
+    status_bytes: bytes = struct.pack('=B', Status.ERROR.value)
+    error_message: bytes = struct.pack('=256s', error_message.encode(ENCODING))
+
+    error_response: bytes = method_bytes + status_bytes + error_message
+    print(error_response)
+
+    client_sock.sendall(error_response)
+
+def send_ok_response(client_sock, request_type):
+    method_bytes: bytes = struct.pack('=8s', request_type.encode(ENCODING))
+    status_bytes: bytes = struct.pack('=B', Status.OK.value)
+
+    ok_response: bytes = method_bytes + status_bytes
+
+    client_sock.sendall(ok_response)
+
+
+def handle_connection_request(client_sock, user):
+    for member in user_list:
+        if member.name == user.name:
+            error_message = 'Name ' + user.name + ' already in use, choose another'
+            send_error_response(client_sock, Request.ENTER_CHAT.value, error_message)
+            return 
+    
     user_list.append(user)
+    send_ok_response(client_sock, Request.ENTER_CHAT.value)
     print(user_list)
 
 
@@ -62,18 +89,16 @@ def serve(client_sock, address):
             client_sock.close()
             return
 
-        method = str(struct.unpack('=8s', request[:8])[0], encoding='utf-8').strip('\x00')
+        method = str(struct.unpack('=8s', request[:8])[0], encoding=ENCODING).strip('\x00')
 
         if (method == Request.ENTER_CHAT.value):
-            unpack_user_message(request[8:])
+            user: User = unpack_user_message(request[8:])
+            handle_connection_request(client_sock, user)
 
 
         if request == 'list':
             data = json.dumps(user_list, ensure_ascii=False)
             client_sock.sendall(data.encode())
-
-        if request.capitalize() in user_list:
-            client_sock.sendall(ERROR_MESSAGE.encode('utf-8'))
                 
         client_sock.sendall(b'OK')
         
