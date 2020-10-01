@@ -7,23 +7,27 @@ from user import User
 from request import Request
 
 SERVER_HOST: str = '127.0.0.1'
-SERVER_PORT: int = 7000
+SERVER_PORT: int = 6000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
 LISTENER_SOCKET_PORT: int = 7000
 
+ENCODING: str = 'utf-8'
+
 
 def structure_user_message(name: str):
-    bytes_name = struct.pack('=16s', name.encode('utf-8'))
+    method: str = Request.ENTER_CHAT.value
+    bytes_method: bytes = struct.pack('=8s', method.encode(ENCODING))
+    bytes_name: bytes = struct.pack('=16s', name.encode(ENCODING))
 
-    bytes_ip = b''
-    ip_parts = LISTENER_SOCKET_HOST.split(".")
+    bytes_ip: bytes = b''
+    ip_parts: list = LISTENER_SOCKET_HOST.split(".")
     for part in ip_parts:
         bytes_ip += struct.pack('=B', int(part))
     
-    bytes_port = struct.pack('=H', LISTENER_SOCKET_PORT)
+    bytes_port: bytes = struct.pack('=H', LISTENER_SOCKET_PORT)
 
-    return (bytes_name + bytes_ip + bytes_port)
+    return (bytes_method + bytes_name + bytes_ip + bytes_port)
 
 
 def main():
@@ -38,13 +42,13 @@ def main():
             break
 
         
-        user = structure_user_message(name)
+        connect_chat_request = structure_user_message(name)
         
-        socket.sendall(user)
+        socket.sendall(connect_chat_request)
 
         received_message = socket.recv(4096)
 
-        status = str(received_message, encoding='utf-8')
+        status = str(received_message, encoding=ENCODING)
 
         if (status == "OK"): break
 
@@ -63,7 +67,7 @@ def main():
 
             user_list = socket.recv(4096)
 
-            print(str(user_list, encoding='utf-8'))
+            print(str(user_list, encoding=ENCODING))
 
     socket.close()
 

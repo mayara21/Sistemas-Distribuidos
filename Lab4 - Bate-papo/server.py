@@ -8,7 +8,7 @@ from user import User
 from request import Request
 
 HOST: str = ''
-PORT: int = 7000
+PORT: int = 6000
 
 ERROR_MESSAGE: str = "Name already being used."
 
@@ -32,7 +32,7 @@ def accept_conection(socket):
     return socket.accept()
 
 def unpack_user_message(msg: bytearray):
-    user_ip = ''
+    user_ip: str = ''
 
     for i in range(16, 19):
         user_ip += str(struct.unpack('=B', msg[i:i + 1])[0]) + '.'
@@ -40,28 +40,39 @@ def unpack_user_message(msg: bytearray):
     user_ip += str(struct.unpack('=B', msg[19:20])[0])
 
     user_name = str(struct.unpack('=16s', msg[:16])[0], encoding='utf-8')
-    user_port = int((struct.unpack('=H', msg[20:22])[0])) 
-    print(user_name)
-    print(user_port)
-    print(user_ip)
+    user_name = user_name.strip('\x00')
+
+    user_port = int((struct.unpack('=H', msg[20:22])[0]))
+
+    user = User(user_name, user_ip, user_port)
+
+    if user.name == 'ana':
+        print(user.name)
+
+    user_list.append(user)
+    print(user_list)
 
 
 def serve(client_sock, address):
     while True:
-        user = client_sock.recv(4096)
+        request = client_sock.recv(4096)
 
-        if not user:
+        if not request:
             print('> Client ' + str(address) + ' disconnected') 
             client_sock.close()
             return
 
-        unpack_user_message(user)
+        method = str(struct.unpack('=8s', request[:8])[0], encoding='utf-8').strip('\x00')
 
-        if user == 'list':
+        if (method == Request.ENTER_CHAT.value):
+            unpack_user_message(request[8:])
+
+
+        if request == 'list':
             data = json.dumps(user_list, ensure_ascii=False)
             client_sock.sendall(data.encode())
 
-        if user.capitalize() in user_list:
+        if request.capitalize() in user_list:
             client_sock.sendall(ERROR_MESSAGE.encode('utf-8'))
                 
         client_sock.sendall(b'OK')
