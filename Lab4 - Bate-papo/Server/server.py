@@ -1,5 +1,5 @@
 import json
-import multiprocessing
+import threading
 import select
 import socket as sock
 import struct
@@ -9,12 +9,13 @@ from request import Request
 from status import Status
 
 HOST: str = ''
-PORT: int = 7000
+PORT: int = 9000
 
 ENCODING: str = 'utf-8'
 
 inputs = [sys.stdin]
 user_list = [User('ana', '127.0.0.1', 0), User('bob', '127.0.0.1', 0), User('sofia', '127.0.0.1', 0)]
+connections: dict = {}
 
 
 def init_server():
@@ -150,6 +151,7 @@ def handle_get_list_request(client_sock):
     simplified_list = get_simplified_list()
     send_list_response(client_sock, Request.LIST_USERS.value, simplified_list)
 
+
 def validate_connection(name):
     print('Validar a conexao')
 
@@ -159,6 +161,7 @@ def serve(client_sock, address):
         request = client_sock.recv(4096)
 
         if not request:
+            #user_list.remove()
             client_sock.close()
             return
 
@@ -194,7 +197,7 @@ def main():
                 client_sock, address = accept_conection(socket)
                 print('Connected with: ', address)
 
-                client = multiprocessing.Process(target=serve, args=(client_sock, address))
+                client = threading.Thread(target=serve, args=(client_sock, address))
                 client.start()
 
                 clients.append(client)
