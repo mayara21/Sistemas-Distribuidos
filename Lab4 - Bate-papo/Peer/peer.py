@@ -13,7 +13,7 @@ SERVER_HOST: str = '127.0.0.1'
 SERVER_PORT: int = 9000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
-LISTENER_SOCKET_PORT: int = 8000
+LISTENER_SOCKET_PORT: int = 6000
 
 SEND_ID = 'ID'
 
@@ -149,22 +149,30 @@ def accept_conection(socket):
     return (client_socket, address)
 
 
-def receive(client_sock):
-    print('listening')
+def receive(client_sock, shutdown_event: threading.Event):
+    client_sock.setblocking(False)
     while True:
-        message = client_sock.recv(4096)
+        ready = select.select([client_sock], [], [], 1)[0]
 
-        if not message:
-            print('fechou')
-            client_sock.close()
-            return
+        if ready:
+            message = client_sock.recv(4096)
 
-        (user, msg) = unpack_message(message)
+            if not message:
+                print('fechou')
+                client_sock.close()
+                return
 
-        print('(' + user + '): ' + msg)
+            (user, msg) = unpack_message(message)
+
+            print('(' + user + '): ' + msg)
+
+        else:
+            if shutdown_event.is_set():
+                client_sock.close()
+                return
 
 
-def connect(socket, user_ip, user_port):
+def connect(socket, user_ip, user_port, shutdown_event: threading.Event):
     print('Conectando a ' + user_ip + ' ' + str(user_port))
 
     socket.connect((user_ip, user_port))
@@ -172,7 +180,7 @@ def connect(socket, user_ip, user_port):
     print(id_msg)
     send(socket, id_msg)
 
-    receive(socket)
+    receive(socket, shutdown_event)
 
 
 def send(socket, msg):
@@ -185,6 +193,8 @@ def send(socket, msg):
 def main():
     socket = sock.socket()
     socket.connect((SERVER_HOST, SERVER_PORT))
+
+    shutdown_event = threading.Event()
 
     while True:
         name: str = input('Enter the name you want to use in the chat: ')
@@ -220,7 +230,7 @@ def main():
                 client_sock, address = accept_conection(listener_socket)
                 print('Connected with: ', address)
 
-                client = threading.Thread(target=receive, args=[client_sock])
+                client = threading.Thread(target=receive, args=[client_sock, shutdown_event])
                 client.start()
 
                 clients.append(client)
@@ -228,6 +238,7 @@ def main():
             elif read == sys.stdin: 
                 cmd = input()
                 if cmd == 'close':
+                    shutdown_event.set()
                     for c in clients: 
                         c.join()
 
@@ -237,7 +248,6 @@ def main():
                 request = cmd.split(' ')
 
                 if request[0].lower() == '/list':
-                    print('lista ai por favor')
                     get_list_request = structure_get_list_request()
                     socket.sendall(get_list_request)
 
@@ -263,7 +273,7 @@ def main():
                         connections[user.name] = new_socket
                         print(connections[user.name])
 
-                        client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port))
+                        client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port, shutdown_event))
                         client.start()
                         clients.append(client)
 
@@ -273,7 +283,6 @@ def main():
 
                 
                 elif request[0].lower() == '/check':
-                    print('checa ai pfv')
                     user_name = request[1]
                     check_user_request = structure_check_user_request(user_name)
 
@@ -286,6 +295,12 @@ def main():
 
                     msg = pack_message(message)
                     send(connections[name], msg)
+
+                elif request[0] == '/disconnect':
+                    name = request[1]
+                    socket = connections.pop(name)
+                    print('fechando socket ', socket)
+                    socket.close()
                 
             
 
