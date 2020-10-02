@@ -150,6 +150,7 @@ def handle_get_list_request(client_sock):
     simplified_list = get_simplified_list()
     send_list_response(client_sock, Request.LIST_USERS.value, simplified_list)
 
+
 def validate_connection(name):
     print('Validar a conexao')
 
