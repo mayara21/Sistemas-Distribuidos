@@ -1,20 +1,18 @@
-import json
 import multiprocessing
 import threading
 import socket as sock
 import select
 import sys
 from user import User
-from request import Request
+from method import Method
 from status import Status
 from message_mapper import Message_Mapper
-import struct
 
 SERVER_HOST: str = '127.0.0.1'
 SERVER_PORT: int = 9000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
-LISTENER_SOCKET_PORT: int = 6000
+LISTENER_SOCKET_PORT: int = 12000
 
 inputs = [sys.stdin]
 
@@ -42,9 +40,7 @@ def accept_conection(socket):
 
     user_name = Message_Mapper.unpack_user_id_on_connect_message(msg[8:])
 
-    connections[user_name] = client_socket
-
-    return (client_socket, address)
+    return (client_socket, address, user_name)
 
 
 def receive(client_sock, shutdown_event: threading.Event):
@@ -56,9 +52,14 @@ def receive(client_sock, shutdown_event: threading.Event):
             message = client_sock.recv(4096)
 
             if not message:
-                print('Peer closed')
-                client_sock.close()
-                return
+                aux = connections
+                for name, (socket, thread, event) in aux.items():
+                    if socket == client_sock:
+                        connections.pop(name)
+                        socket.close()
+
+                        print(name + ' closed')
+                        return
 
             (user, msg) = Message_Mapper.unpack_message_receive(message)
 
@@ -89,7 +90,9 @@ def main():
     socket = sock.socket()
     socket.connect((SERVER_HOST, SERVER_PORT))
 
-    shutdown_event = threading.Event()
+    clients = [] 
+    listener_socket = init_listener()
+
 
     while True:
         name: str = input('Enter the name you want to use in the chat: ')
@@ -114,10 +117,7 @@ def main():
             error_message = Message_Mapper.unpack_error_response(message)
             print(error_message)
 
-
-    clients = [] 
-    listener_socket = init_listener()
-    print('Connected to chat!...\nType close to terminate execution')
+    print('Connected to chat!...\nType /close to terminate execution')
 
     # add instructions!!
 
@@ -126,22 +126,25 @@ def main():
 
         for read in r:
             if read == listener_socket:
-                client_sock, address = accept_conection(listener_socket)
+                client_sock, address, user_name = accept_conection(listener_socket)
                 print('Connected with: ', address)
-
+                shutdown_event = threading.Event()
                 client = threading.Thread(target=receive, args=[client_sock, shutdown_event])
-                client.start()
 
+                connections[user_name] = (client_sock, client, shutdown_event)
+
+                client.start()
                 clients.append(client)
 
             elif read == sys.stdin: 
                 cmd = input()
-                if cmd == 'close':
-                    shutdown_event.set()
-                    for c in clients: 
-                        c.join()
+                if cmd == '/close':
 
-                    socket.close() 
+                    for (socket, thread, shutdown_event) in connections.values():
+                        shutdown_event.set()
+                        thread.join()
+                        socket.close()
+
                     sys.exit()
 
                 request = cmd.split(' ')
@@ -163,17 +166,17 @@ def main():
                     socket.sendall(get_user_request)
 
                     get_user_response = socket.recv(4096)
-                    status = Message_Mapper.unpack_status(get_user_response)
+                    status = Message_Mapper.unpack_status(get_user_response[8:9])
                     message = get_user_response[9:]
 
+                    print(str(status))
                     if status == Status.OK.value:
                         user = Message_Mapper.unpack_get_user_response(message)
-                        print('Usuário: ' + str(user.ip_address) + ', ' + str(user.port) + ', ' + user.name)
 
                         new_socket = sock.socket()
-                        connections[user.name] = new_socket
-
+                        shutdown_event = threading.Event()
                         client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port, shutdown_event))
+                        connections[user.name] = (new_socket, client, shutdown_event)
 
                         client.start()
                         clients.append(client)
@@ -195,12 +198,15 @@ def main():
                     message = ' '.join(request[2:])
 
                     msg = Message_Mapper.pack_message_send(my_name, message)
-                    send(connections[name], msg)
+                    socket, thread, shutdown_event = connections[name]
+                    send(socket, msg)
 
                 elif request[0] == '/disconnect':
                     name = request[1]
-                    socket = connections.pop(name)
-                    print('Closing socket ', socket)
+                    socket, thread, shutdown_event = connections.pop(name)
+
+                    shutdown_event.set()
+                    thread.join()
                     socket.close()
                 
             

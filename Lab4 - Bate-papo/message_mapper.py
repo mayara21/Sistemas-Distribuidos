@@ -198,13 +198,11 @@ class Message_Mapper():
 
 # Basic packing
 
-
 def _pack_status(status: int):
     return struct.pack('=B', status)
 
 def _pack_method(method: str):
     return struct.pack('=8s', method.encode(ENCODING))
-
 
 def _pack_name(name: str):
     return struct.pack('=16s', name.encode(ENCODING))
@@ -229,7 +227,6 @@ def _unpack_method(message: bytearray):
 
 def _unpack_status(message):
     return int(struct.unpack('=B', message[:1])[0])
-
 
 def _unpack_name(message):
     return str(struct.unpack('=16s', message[:16])[0], encoding=ENCODING).strip('\x00')

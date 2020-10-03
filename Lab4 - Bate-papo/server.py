@@ -11,7 +11,7 @@ HOST: str = ''
 PORT: int = 9000
 
 inputs = [sys.stdin]
-user_list = [User('ana', '127.0.0.1', 0), User('bob', '127.0.0.1', 0), User('sofia', '127.0.0.1', 0)]
+user_list = []
 connections: dict = {}
 
 
@@ -60,6 +60,7 @@ def handle_connection_request(client_sock, user):
 def handle_get_user_request(client_sock, name):
     for member in user_list:
         if member.name == name:
+            print(name)
             send_get_user_response(client_sock, member, Method.GET_USER.value)
             return
 
@@ -107,6 +108,7 @@ def serve(client_sock, address):
         
         elif method == Method.GET_USER.value:
             user_name: str = Message_Mapper.unpack_get_user_request(message)
+            print(user_name)
             handle_get_user_request(client_sock, user_name)
 
         elif method == Method.CHECK_USER_CONNECTION.value:
