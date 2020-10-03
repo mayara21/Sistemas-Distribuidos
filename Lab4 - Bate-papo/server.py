@@ -1,0 +1,152 @@
+import threading
+import select
+import socket as sock
+import struct
+import sys
+from user import User
+from method import Method
+from message_mapper import Message_Mapper
+
+HOST: str = ''
+PORT: int = 9000
+
+inputs = [sys.stdin]
+user_list = []
+connections: dict = {}
+
+
+def init_server():
+    socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
+    socket.bind((HOST, PORT))
+
+    socket.listen(5)
+    socket.setblocking(False)
+
+    inputs.append(socket)
+
+    return socket
+
+
+def accept_conection(socket):
+    return socket.accept()
+
+
+def send_error_response(client_sock, request_type, error_message):
+    error_response = Message_Mapper.pack_error_response(request_type, error_message)
+    client_sock.sendall(error_response)
+
+
+def send_ok_response(client_sock, request_type):
+    ok_response = Message_Mapper.pack_ok_response(request_type)
+    client_sock.sendall(ok_response)
+
+
+def send_get_user_response(client_sock, user, request_type):
+    user_response = Message_Mapper.pack_get_user_response(user.name, user.ip_address, user.port)
+    client_sock.sendall(user_response)
+
+
+def handle_connection_request(client_sock, user):
+    for member in user_list:
+        if member.name == user.name:
+            error_message = 'Name ' + user.name + ' already in use, choose another'
+            send_error_response(client_sock, Method.ENTER_CHAT.value, error_message)
+            return 
+    
+    user_list.append(user)
+    send_ok_response(client_sock, Method.ENTER_CHAT.value)
+
+
+def handle_get_user_request(client_sock, name):
+    for member in user_list:
+        if member.name == name:
+            print(name)
+            send_get_user_response(client_sock, member, Method.GET_USER.value)
+            return
+
+    error_message = 'User ' + name + ' is not connect to the chat'
+    send_error_response(client_sock, Method.GET_USER.value, error_message)
+
+
+def send_list_response(client_sock, simplified_list):
+    message = Message_Mapper.pack_get_list_response(simplified_list)
+    client_sock.sendall(message)
+
+
+def get_simplified_list():
+    simplified_list = []
+    for user in user_list:
+        simplified_list.append(user.name)
+
+    return simplified_list
+
+
+def handle_get_list_request(client_sock):
+    simplified_list = get_simplified_list()
+    send_list_response(client_sock, simplified_list)
+
+
+def validate_connection(name):
+    print('Validar a conexao')
+
+
+def serve(client_sock, address):
+    while True:
+        request = client_sock.recv(4096)
+
+        if not request:
+            #user_list.remove()
+            client_sock.close()
+            return
+
+        method = Message_Mapper.unpack_method(request)
+        message = request[8:]
+
+        if method == Method.ENTER_CHAT.value:
+            user: User = Message_Mapper.unpack_connect_request(message)
+            handle_connection_request(client_sock, user)
+        
+        elif method == Method.GET_USER.value:
+            user_name: str = Message_Mapper.unpack_get_user_request(message)
+            print(user_name)
+            handle_get_user_request(client_sock, user_name)
+
+        elif method == Method.CHECK_USER_CONNECTION.value:
+            user_name: str = Message_Mapper.unpack_check_user_request(message )
+            validate_connection(user_name)
+
+        elif method == Method.LIST_USERS.value:
+            handle_get_list_request(client_sock)
+        
+
+
+def main():
+    clients = [] # saves the created threads to join them
+    socket = init_server()
+    print('Server Ready...\nType close to terminate server execution')
+    
+    while True:
+        r, w, err = select.select(inputs, [], [])
+
+        for read in r:
+            if read == socket:
+                client_sock, address = accept_conection(socket)
+                print('Connected with: ', address)
+
+                client = threading.Thread(target=serve, args=(client_sock, address))
+                client.start()
+
+                clients.append(client)
+
+            elif read == sys.stdin: 
+                cmd = input()
+                if cmd == 'close':
+                    for c in clients: 
+                        c.join()
+
+                    socket.close() 
+                    sys.exit()
+
+
+if __name__ == "__main__":
+    main()
