@@ -153,7 +153,6 @@ def serve(client_sock, address):
         
         elif method == Method.GET_USER.value:
             user_name: str = Message_Mapper.unpack_get_user_request(message)
-            print(user_name)
             handle_get_user_request(client_sock, user_name)
 
         elif method == Method.CHECK_USER_CONNECTION.value:

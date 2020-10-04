@@ -11,7 +11,7 @@ SERVER_HOST: str = '127.0.0.1'
 SERVER_PORT: int = 9000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
-LISTENER_SOCKET_PORT: int = 12002
+LISTENER_SOCKET_PORT: int = 12001
 
 MAX_MESSAGE_SIZE_RECV = 4096
 
@@ -23,7 +23,7 @@ connections: dict = {}
 
 def init_listener():
     socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
-    socket.bind((LISTENER_SOCKET_HOST, LISTENER_SOCKET_PORT))
+    socket.bind((LISTENER_SOCKET_HOST, 0))
 
     socket.listen(5)
     socket.setblocking(False)
@@ -99,7 +99,7 @@ def connect_to_chat(socket, listener_socket):
             listener_socket.close()
             sys.exit() 
             
-        connect_chat_request = Message_Mapper.pack_connect_request(name, LISTENER_SOCKET_HOST, LISTENER_SOCKET_PORT)
+        connect_chat_request = Message_Mapper.pack_connect_request(name, LISTENER_SOCKET_HOST, listener_socket.getsockname()[1])
         send(socket, connect_chat_request)
 
         connection_response: bytes = socket.recv(MAX_MESSAGE_SIZE_RECV)
@@ -233,7 +233,7 @@ def main():
                     handle_validation(socket)
 
             elif read == sys.stdin: 
-                cmd = input('>> ')
+                cmd = input()
                 request = cmd.split(' ')
                 head = request[0].lower()
 
