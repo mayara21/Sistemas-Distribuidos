@@ -50,7 +50,7 @@ def send_get_user_response(client_sock, user, request_type):
 def handle_connection_request(client_sock, user):
     for member in user_list:
         if member.name == user.name:
-            error_message = 'Name ' + user.name + ' already in use, choose another'
+            error_message = 'Sorry, the name ' + user.name + ' is already being used :(\nTry another one'
             send_error_response(client_sock, Method.ENTER_CHAT.value, error_message)
             return 
     
@@ -153,7 +153,6 @@ def serve(client_sock, address):
         
         elif method == Method.GET_USER.value:
             user_name: str = Message_Mapper.unpack_get_user_request(message)
-            print(user_name)
             handle_get_user_request(client_sock, user_name)
 
         elif method == Method.CHECK_USER_CONNECTION.value:
