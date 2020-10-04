@@ -78,6 +78,13 @@ class Message_Mapper():
         return _unpack_name(message)
 
 
+    # Validate User Mapping
+
+    @staticmethod
+    def pack_validate_user_message():
+        return _pack_method(Method.VALIDATE_CONNECTION.value)
+
+
     # List Mapping
     
     @staticmethod
