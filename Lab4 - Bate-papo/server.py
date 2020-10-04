@@ -4,10 +4,13 @@ import socket as sock
 import sys
 from user import User
 from method import Method
+from status import Status
 from message_mapper import Message_Mapper
 
 HOST: str = ''
 PORT: int = 9000
+
+MAX_MESSAGE_SIZE_RECV = 4096
 
 inputs = [sys.stdin]
 user_list = []
@@ -84,13 +87,46 @@ def handle_get_list_request(client_sock):
     send_list_response(client_sock, simplified_list)
 
 
+def handle_check_request(name):
+    for user in user_list:
+        if user.name == name:
+            validate_connection(name)
+            return
+
+def handle_validate_message(client_sock, message):
+    status = Message_Mapper.unpack_status(message)
+
+    if status != Status.OK.value:
+        aux = connections
+
+        for user_name, socket in aux.items():
+            if socket == client_sock:
+                connections.pop(user_name)
+                remove_user(user_name)          
+                socket.close()
+
+                print(user_name + ' disconnected from chat')
+                return
+
+    else:
+        print('User still active')
+
+
 def validate_connection(name):
-    print('Validar a conexao')
+    validation: bytes = Message_Mapper.pack_validate_user_message()
+    socket = connections[name]
+    socket.sendall(validation)
+
+
+def remove_user(name: str):
+    for user in user_list:
+        if user.name == name:
+            user_list.remove(user)
 
 
 def serve(client_sock, address):
     while True:
-        request = client_sock.recv(4096)
+        request = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
 
         if not request:
             aux = connections
@@ -98,14 +134,15 @@ def serve(client_sock, address):
             for user_name, socket in aux.items():
                 if socket == client_sock:
                     connections.pop(user_name)
-                    for user in user_list:
-                        if user.name == user_name:
-                            user_list.remove(user)
-                            
+                    remove_user(user_name)          
                     socket.close()
 
                     print(user_name + ' disconnected from chat')
                     return
+
+            print(str(address) + ' disconnected before informing a name')
+            client_sock.close()
+            return
 
         method = Message_Mapper.unpack_method(request)
         message = request[8:]
@@ -121,17 +158,20 @@ def serve(client_sock, address):
 
         elif method == Method.CHECK_USER_CONNECTION.value:
             user_name: str = Message_Mapper.unpack_check_user_request(message )
-            validate_connection(user_name)
+            handle_check_request(user_name)
 
         elif method == Method.LIST_USERS.value:
             handle_get_list_request(client_sock)
+
+        elif method == Method.VALIDATE_CONNECTION.value:
+            handle_validate_message(client_sock, message)
         
 
 
 def main():
     clients = [] # saves the created threads to join them
     socket = init_server()
-    print('Server Ready...\nType close to terminate server execution')
+    print('Server Ready...\nType /close to terminate server execution')
     
     while True:
         r, w, err = select.select(inputs, [], [])
@@ -149,12 +189,15 @@ def main():
 
             elif read == sys.stdin: 
                 cmd = input()
-                if cmd == 'close':
+                if cmd == '/close':
                     for c in clients: 
                         c.join()
 
                     socket.close() 
                     sys.exit()
+
+                else:
+                    print('Command not found.')
 
 
 if __name__ == "__main__":

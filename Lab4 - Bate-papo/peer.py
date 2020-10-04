@@ -11,7 +11,9 @@ SERVER_HOST: str = '127.0.0.1'
 SERVER_PORT: int = 9000
 
 LISTENER_SOCKET_HOST: str = '127.0.0.1'
-LISTENER_SOCKET_PORT: int = 12000
+LISTENER_SOCKET_PORT: int = 12002
+
+MAX_MESSAGE_SIZE_RECV = 4096
 
 inputs = [sys.stdin]
 
@@ -35,7 +37,7 @@ def accept_conection(socket):
     (client_socket, address) = socket.accept()
     print(client_socket, address)
 
-    msg = client_socket.recv(4096)
+    msg = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
 
     user_name = Message_Mapper.unpack_user_id_on_connect_message(msg[8:])
 
@@ -48,7 +50,7 @@ def receive(client_sock, shutdown_event: threading.Event):
         ready = select.select([client_sock], [], [], 1)[0]
 
         if ready:
-            message = client_sock.recv(4096)
+            message = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
 
             if not message:
                 aux = connections
@@ -71,8 +73,6 @@ def receive(client_sock, shutdown_event: threading.Event):
 
 
 def connect(socket, user_ip, user_port, shutdown_event: threading.Event):
-    print('Conecting to ' + user_ip + ' ' + str(user_port))
-
     socket.connect((user_ip, user_port))
     id_msg = Message_Mapper.pack_user_id_on_connect_message(my_name)
 
@@ -81,28 +81,28 @@ def connect(socket, user_ip, user_port, shutdown_event: threading.Event):
     receive(socket, shutdown_event)
 
 
+def send_to_user(name, user_input):
+    message = Message_Mapper.pack_message_send(my_name, user_input)
+    client_socket, thread, shutdown_event = connections[name]
+    send(client_socket, message)
+
+
 def send(socket, msg):
-    socket.sendall(msg)        
+    socket.sendall(msg)  
 
-
-def main():
-    socket = sock.socket()
-    socket.connect((SERVER_HOST, SERVER_PORT))
-
-    listener_socket = init_listener()
-
-
+def connect_to_chat(socket, listener_socket):
     while True:
-        name: str = input('Enter the name you want to use in the chat: ')
+        name: str = input('Enter the name you want to use in the chat\n(if you want to quit, enter leave): ')
 
-        if (name.lower() == 'close'): 
-            break
+        if (name.lower() == 'leave'):
+            socket.close()
+            listener_socket.close()
+            sys.exit() 
             
         connect_chat_request = Message_Mapper.pack_connect_request(name, LISTENER_SOCKET_HOST, LISTENER_SOCKET_PORT)
-        socket.sendall(connect_chat_request)
+        send(socket, connect_chat_request)
 
-        connection_response = socket.recv(4096)
-            
+        connection_response: bytes = socket.recv(MAX_MESSAGE_SIZE_RECV)
         status: int = Message_Mapper.unpack_status(connection_response[8:9])
 
         if status == Status.OK.value:
@@ -113,11 +113,104 @@ def main():
         else:
             message = connection_response[9:]
             error_message = Message_Mapper.unpack_error_response(message)
-            print(error_message)
+            show_error(error_message)
 
-    print('Connected to chat!...\nType /close to terminate execution')
 
-    # add instructions!!
+def handle_validation(socket):
+    response = Message_Mapper.pack_ok_response(Method.VALIDATE_CONNECTION.value)
+    send(socket, response)
+
+
+def disconnect_from_chat():
+    for (socket, thread, shutdown_event) in connections.values():
+        shutdown_event.set()
+        thread.join()
+        socket.close()
+
+    sys.exit()
+
+
+def show_list(user_list):
+    user_list.remove(my_name) # add try exception
+    if len(user_list) == 0:
+        print('There are no users currently connected to the chat :(\nTry again later')
+
+    else:
+        print(user_list)
+
+
+def get_user_list(socket):
+    get_list_request = Message_Mapper.pack_get_list_request()
+    send(socket, get_list_request)
+
+    get_list_response = socket.recv(MAX_MESSAGE_SIZE_RECV)
+
+    user_list = Message_Mapper.unpack_get_list_response(get_list_response[9:])
+    show_list(user_list)
+
+
+def connect_with_user(socket, name):
+    get_user_request = Message_Mapper.pack_get_user_request(name)
+
+    send(socket, get_user_request)
+    get_user_response = socket.recv(MAX_MESSAGE_SIZE_RECV)
+
+    status = Message_Mapper.unpack_status(get_user_response[8:9])
+    message = get_user_response[9:]
+
+    if status == Status.OK.value:
+        user: User = Message_Mapper.unpack_get_user_response(message)
+
+        new_socket = sock.socket()
+        shutdown_event = threading.Event()
+        client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port, shutdown_event))
+        connections[user.name] = (new_socket, client, shutdown_event)
+
+        client.start()
+
+    else:
+        error_message = Message_Mapper.unpack_error_response(message)
+        show_error(error_message)
+
+
+def check_user(socket, name):
+    check_user_request = Message_Mapper.pack_check_user_request(name)
+    send(socket, check_user_request)
+
+
+def disconnect_from_user(name):
+    client_socket, thread, shutdown_event = connections.pop(name)
+
+    shutdown_event.set()
+    thread.join()
+    client_socket.close()
+
+
+def show_instructions(): 
+    print('Chat instructions:')
+    print('- \'/help\': list chat instructions')
+    print('- \'/list\': list active users')
+    print('- \'/connect user\': connect to user')
+    print('- \'/send user message\': send message to specified user')
+    print('- \'/disconnect user\': disconnect from user')
+    print('- \'/leave\': disconnect from chat')
+
+
+def show_error(error_message):
+    print('Oops, seems like something went wrong :(')
+    print(error_message)
+
+
+def main():
+    socket = sock.socket()
+    socket.connect((SERVER_HOST, SERVER_PORT))
+    inputs.append(socket)
+    listener_socket = init_listener()
+
+    connect_to_chat(socket, listener_socket)
+
+    print('Welcome to the chat!')
+    show_instructions()
 
     while True:
         r, w, err = select.select(inputs, [], [])
@@ -126,86 +219,52 @@ def main():
             if read == listener_socket:
                 client_sock, address, user_name = accept_conection(listener_socket)
                 print('Connected with: ', address)
+
                 shutdown_event = threading.Event()
                 client = threading.Thread(target=receive, args=[client_sock, shutdown_event])
 
                 connections[user_name] = (client_sock, client, shutdown_event)
-
                 client.start()
 
+            elif read == socket:
+                message = socket.recv(MAX_MESSAGE_SIZE_RECV)
+                method = Message_Mapper.unpack_method(message)
+                if method == Method.VALIDATE_CONNECTION.value:
+                    handle_validation(socket)
+
             elif read == sys.stdin: 
-                cmd = input()
-                if cmd == '/close':
-
-                    for (socket, thread, shutdown_event) in connections.values():
-                        shutdown_event.set()
-                        thread.join()
-                        socket.close()
-
-                    sys.exit()
-
+                cmd = input('>> ')
                 request = cmd.split(' ')
+                head = request[0].lower()
 
-                if request[0].lower() == '/list':
-                    get_list_request = Message_Mapper.pack_get_list_request()
-                    socket.sendall(get_list_request)
+                if head == '/leave':
+                    disconnect_from_chat()
 
-                    get_list_response = socket.recv(4096)
+                elif head == '/list':
+                    get_user_list(socket)
 
-                    user_list = Message_Mapper.unpack_get_list_response(get_list_response[9:])
-                    print (user_list)
-
-
-                elif request[0].lower() == '/connect':
+                elif head == '/connect':
                     name = request[1]
+                    connect_with_user(socket, name)
 
-                    get_user_request = Message_Mapper.pack_get_user_request(name)
-                    socket.sendall(get_user_request)
+                elif head == '/check':
+                    name = request[1]
+                    check_user(socket, name)
 
-                    get_user_response = socket.recv(4096)
-                    status = Message_Mapper.unpack_status(get_user_response[8:9])
-                    message = get_user_response[9:]
-
-                    if status == Status.OK.value:
-                        user = Message_Mapper.unpack_get_user_response(message)
-
-                        new_socket = sock.socket()
-                        shutdown_event = threading.Event()
-                        client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port, shutdown_event))
-                        connections[user.name] = (new_socket, client, shutdown_event)
-
-                        client.start()
-
-                    else:
-                        error_message = Message_Mapper.unpack_error_response(message)
-                        print(error_message)
-
-                
-                elif request[0].lower() == '/check':
-                    user_name = request[1]
-                    check_user_request = Message_Mapper.pack_check_user_request(user_name)
-
-                    socket.sendall(check_user_request)
-
-
-                elif request[0] == '/send':
-                    # ipdb.set_trace()
+                elif head == '/send':
                     name = request[1]
                     message = ' '.join(request[2:])
+                    send_to_user(name, message)
 
-                    msg = Message_Mapper.pack_message_send(my_name, message)
-                    client_socket, thread, shutdown_event = connections[name]
-                    send(client_socket, msg)
-
-                elif request[0] == '/disconnect':
+                elif head == '/disconnect':
                     name = request[1]
-                    client_socket, thread, shutdown_event = connections.pop(name)
+                    disconnect_from_user(name)
 
-                    shutdown_event.set()
-                    thread.join()
-                    client_socket.close()
-                
-            
+                elif head == '/help':
+                    show_instructions()
+
+                else:
+                    print('Command not found. Enter \'/help\' to see available commands.')                
 
 if __name__ == "__main__":
     main()
