@@ -19,6 +19,7 @@ inputs = [sys.stdin]
 my_name = ''
 
 connections: dict = {}
+peers = []
 
 def init_listener():
     socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
@@ -56,6 +57,7 @@ def receive(client_sock, shutdown_event: threading.Event):
                 for name, (socket, thread, event) in aux.items():
                     if socket == client_sock:
                         connections.pop(name)
+                        peers.remove(name)
                         socket.close()
 
                         print(name + ' closed')
@@ -84,6 +86,8 @@ def send_to_user(name, user_input):
     message = Message_Mapper.pack_message_send(my_name, user_input)
     client_socket, thread, shutdown_event = connections[name]
     send(client_socket, message)
+    print('(you to ' + name + '): ' + user_input)
+    # show_message(name, message)
 
 
 def send(socket, msg):
@@ -164,6 +168,7 @@ def connect_with_user(socket, name):
         shutdown_event = threading.Event()
         client = threading.Thread(target=connect, args=(new_socket, user.ip_address, user.port, shutdown_event))
         connections[user.name] = (new_socket, client, shutdown_event)
+        peers.append(user.name)
 
         client.start()
 
@@ -179,6 +184,7 @@ def check_user(socket, name):
 
 def disconnect_from_user(name):
     client_socket, thread, shutdown_event = connections.pop(name)
+    peers.remove(name)
 
     shutdown_event.set()
     thread.join()
@@ -188,8 +194,10 @@ def disconnect_from_user(name):
 def show_instructions(): 
     print('Chat instructions:')
     print('- \'/help\': list chat instructions')
+    print('- \'/name\': show the name you are using')
     print('- \'/list\': list active users')
     print('- \'/connect user\': connect to user')
+    print('- \'/connections\': list the users you are connected to')
     print('- \'/send user message\': send message to specified user')
     print('- \'/disconnect user\': disconnect from user')
     print('- \'/leave\': disconnect from chat')
@@ -223,6 +231,7 @@ def main():
                 client = threading.Thread(target=receive, args=[client_sock, shutdown_event])
 
                 connections[user_name] = (client_sock, client, shutdown_event)
+                peers.append(user_name)
                 client.start()
 
             elif read == socket:
@@ -244,7 +253,12 @@ def main():
 
                 elif head == '/connect':
                     name = request[1]
-                    connect_with_user(socket, name)
+                    if name == my_name:
+                        error_message = 'You can\'t connect to yourself, try another user :)'
+                        show_error(error_message)
+
+                    else:
+                        connect_with_user(socket, name)
 
                 elif head == '/check':
                     name = request[1]
@@ -252,12 +266,25 @@ def main():
 
                 elif head == '/send':
                     name = request[1]
-                    message = ' '.join(request[2:])
-                    send_to_user(name, message)
+                    if name == my_name:
+                        error_message = 'You can\'t send a message to yourself, try someone else in the chat :)'
+                        show_error(error_message)
+                    else:
+                        message = ' '.join(request[2:])
+                        send_to_user(name, message)
+
+                elif head == '/connections':
+                    if len(peers) == 0:
+                        print('It seems you are not connected with anyone :(\nTry \'/list\' to see active users.')
+                    else: 
+                        print(peers)
 
                 elif head == '/disconnect':
                     name = request[1]
                     disconnect_from_user(name)
+
+                elif head == '/name':
+                    print('Your name in the chat is: ' + my_name)
 
                 elif head == '/help':
                     show_instructions()
