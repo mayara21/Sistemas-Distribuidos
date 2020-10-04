@@ -14,7 +14,6 @@ inputs = [sys.stdin]
 user_list = []
 connections: dict = {}
 
-
 def init_server():
     socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
     socket.bind((HOST, PORT))
@@ -54,13 +53,13 @@ def handle_connection_request(client_sock, user):
             return 
     
     user_list.append(user)
+    connections[user.name] = client_sock
     send_ok_response(client_sock, Method.ENTER_CHAT.value)
 
 
 def handle_get_user_request(client_sock, name):
     for member in user_list:
         if member.name == name:
-            print(name)
             send_get_user_response(client_sock, member, Method.GET_USER.value)
             return
 
@@ -95,9 +94,19 @@ def serve(client_sock, address):
         request = client_sock.recv(4096)
 
         if not request:
-            #user_list.remove()
-            client_sock.close()
-            return
+            aux = connections
+
+            for user_name, socket in aux.items():
+                if socket == client_sock:
+                    connections.pop(user_name)
+                    for user in user_list:
+                        if user.name == user_name:
+                            user_list.remove(user)
+                            
+                    socket.close()
+
+                    print(user_name + ' disconnected from chat')
+                    return
 
         method = Message_Mapper.unpack_method(request)
         message = request[8:]
@@ -131,6 +140,7 @@ def main():
         for read in r:
             if read == socket:
                 client_sock, address = accept_conection(socket)
+                client_sock.setblocking(True)
                 print('Connected with: ', address)
 
                 client = threading.Thread(target=serve, args=(client_sock, address))

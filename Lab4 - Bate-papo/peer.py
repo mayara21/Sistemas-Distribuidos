@@ -1,4 +1,3 @@
-import multiprocessing
 import threading
 import socket as sock
 import select
@@ -90,7 +89,6 @@ def main():
     socket = sock.socket()
     socket.connect((SERVER_HOST, SERVER_PORT))
 
-    clients = [] 
     listener_socket = init_listener()
 
 
@@ -134,7 +132,6 @@ def main():
                 connections[user_name] = (client_sock, client, shutdown_event)
 
                 client.start()
-                clients.append(client)
 
             elif read == sys.stdin: 
                 cmd = input()
@@ -169,7 +166,6 @@ def main():
                     status = Message_Mapper.unpack_status(get_user_response[8:9])
                     message = get_user_response[9:]
 
-                    print(str(status))
                     if status == Status.OK.value:
                         user = Message_Mapper.unpack_get_user_response(message)
 
@@ -179,7 +175,6 @@ def main():
                         connections[user.name] = (new_socket, client, shutdown_event)
 
                         client.start()
-                        clients.append(client)
 
                     else:
                         error_message = Message_Mapper.unpack_error_response(message)
@@ -194,20 +189,21 @@ def main():
 
 
                 elif request[0] == '/send':
+                    # ipdb.set_trace()
                     name = request[1]
                     message = ' '.join(request[2:])
 
                     msg = Message_Mapper.pack_message_send(my_name, message)
-                    socket, thread, shutdown_event = connections[name]
-                    send(socket, msg)
+                    client_socket, thread, shutdown_event = connections[name]
+                    send(client_socket, msg)
 
                 elif request[0] == '/disconnect':
                     name = request[1]
-                    socket, thread, shutdown_event = connections.pop(name)
+                    client_socket, thread, shutdown_event = connections.pop(name)
 
                     shutdown_event.set()
                     thread.join()
-                    socket.close()
+                    client_socket.close()
                 
             
 
