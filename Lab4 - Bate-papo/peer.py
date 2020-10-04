@@ -258,7 +258,12 @@ def main():
                         show_error(error_message)
 
                     else:
-                        connect_with_user(socket, name)
+                        if peers.count(name) != 0:
+                            error_message = 'You are already connected to ' + name + ', try another user :)'
+                            show_error(error_message)
+
+                        else:
+                            connect_with_user(socket, name)
 
                 elif head == '/check':
                     name = request[1]
