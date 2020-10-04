@@ -1,7 +1,6 @@
 import threading
 import select
 import socket as sock
-import struct
 import sys
 from user import User
 from method import Method

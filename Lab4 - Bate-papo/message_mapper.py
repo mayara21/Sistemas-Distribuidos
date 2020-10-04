@@ -90,22 +90,22 @@ class Message_Mapper():
         header = Message_Mapper.pack_ok_response(Method.LIST_USERS.value)
         
         list_size = len(simplified_list)
-        list_size_bytes: bytes = struct.pack('=H', list_size)
+        list_size_bytes: bytes = struct.pack('!H', list_size)
         names_bytes: bytes = b''
 
         for i in range(list_size):
-            names_bytes += struct.pack('=16s', simplified_list[i].encode(ENCODING))
+            names_bytes += struct.pack('!16s', simplified_list[i].encode(ENCODING))
 
         return header + list_size_bytes + names_bytes
 
     @staticmethod
     def unpack_get_list_response(message: bytearray):
-        list_size = int(struct.unpack('=H', message[:2])[0])
+        list_size = int(struct.unpack('!H', message[:2])[0])
         user_list = []
 
         for i in range(list_size):
             j = 2 + i*16
-            user = str(struct.unpack('=16s', message[j: j + 16])[0], encoding=ENCODING).strip('\x00')
+            user = str(struct.unpack('!16s', message[j: j + 16])[0], encoding=ENCODING).strip('\x00')
             user_list.append(user)
 
         return user_list
@@ -118,9 +118,9 @@ class Message_Mapper():
     def pack_message_send(name: str, message: str):
         name_bytes: bytes = _pack_name(name)
         message_size = len(message)
-        message_size_bytes: bytes = struct.pack('=H', message_size)
+        message_size_bytes: bytes = struct.pack('!H', message_size)
 
-        message_bytes = struct.pack('=' + str(message_size) + 's', message.encode(ENCODING))
+        message_bytes = struct.pack('!' + str(message_size) + 's', message.encode(ENCODING))
 
         return name_bytes + message_size_bytes + message_bytes
 
@@ -128,9 +128,9 @@ class Message_Mapper():
     @staticmethod
     def unpack_message_receive(message: bytearray):
         name = _unpack_name(message)
-        message_size = int(struct.unpack('=H', message[16:18])[0])
+        message_size = int(struct.unpack('!H', message[16:18])[0])
 
-        message = str(struct.unpack('=' + str(message_size) + 's', message[18:])[0], encoding=ENCODING)
+        message = str(struct.unpack('!' + str(message_size) + 's', message[18:])[0], encoding=ENCODING)
 
         return (name, message)
 
@@ -157,7 +157,7 @@ class Message_Mapper():
     @staticmethod
     def pack_ok_response(method):
         method_bytes: bytes = _pack_method(method)
-        status_bytes: bytes = struct.pack('=B', Status.OK.value)
+        status_bytes: bytes = struct.pack('!B', Status.OK.value)
 
         return method_bytes + status_bytes
 
@@ -165,15 +165,15 @@ class Message_Mapper():
     @staticmethod
     def pack_error_response(method, message):
         method_bytes: bytes = _pack_method(method)
-        status_bytes: bytes = struct.pack('=B', Status.ERROR.value)
-        error_message: bytes = struct.pack('=256s', message.encode(ENCODING))
+        status_bytes: bytes = struct.pack('!B', Status.ERROR.value)
+        error_message: bytes = struct.pack('!256s', message.encode(ENCODING))
 
         return method_bytes + status_bytes + error_message
 
 
     @staticmethod
     def unpack_error_response(message):
-        return str(struct.unpack('=256s', message[:256])[0], encoding=ENCODING).strip('\x00')
+        return str(struct.unpack('!256s', message[:256])[0], encoding=ENCODING).strip('\x00')
 
 
     # Method Mapping
@@ -199,49 +199,49 @@ class Message_Mapper():
 # Basic packing
 
 def _pack_status(status: int):
-    return struct.pack('=B', status)
+    return struct.pack('!B', status)
 
 def _pack_method(method: str):
-    return struct.pack('=8s', method.encode(ENCODING))
+    return struct.pack('!8s', method.encode(ENCODING))
 
 def _pack_name(name: str):
-    return struct.pack('=16s', name.encode(ENCODING))
+    return struct.pack('!16s', name.encode(ENCODING))
 
 
 def _pack_ip(ip: str):
     ip_bytes: bytes = b''
     ip_parts: list = ip.split(".")
     for part in ip_parts:
-        ip_bytes += struct.pack('=B', int(part))
+        ip_bytes += struct.pack('!B', int(part))
 
     return ip_bytes
 
 def _pack_port(port: int):
-    return struct.pack('=H', port)
+    return struct.pack('!H', port)
 
 
 # Basic unpacking
 
 def _unpack_method(message: bytearray):
-    return str(struct.unpack('=8s', message[:8])[0], encoding=ENCODING).strip('\x00')
+    return str(struct.unpack('!8s', message[:8])[0], encoding=ENCODING).strip('\x00')
 
 def _unpack_status(message):
-    return int(struct.unpack('=B', message[:1])[0])
+    return int(struct.unpack('!B', message[:1])[0])
 
 def _unpack_name(message):
-    return str(struct.unpack('=16s', message[:16])[0], encoding=ENCODING).strip('\x00')
+    return str(struct.unpack('!16s', message[:16])[0], encoding=ENCODING).strip('\x00')
 
 
 def _unpack_ip(message):
     user_ip: str = ''
 
     for i in range(3):
-        user_ip += str(struct.unpack('=B', message[i:i + 1])[0]) + '.'
+        user_ip += str(struct.unpack('!B', message[i:i + 1])[0]) + '.'
         
-    user_ip += str(struct.unpack('=B', message[3:4])[0])
+    user_ip += str(struct.unpack('!B', message[3:4])[0])
 
     return user_ip
 
 
 def _unpack_port(message):
-    return int((struct.unpack('=H', message[:2])[0]))
+    return int((struct.unpack('!H', message[:2])[0]))
