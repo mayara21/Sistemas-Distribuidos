@@ -5,7 +5,7 @@ from status import Status
 
 ENCODING = 'utf-8'
 
-class Message_Mapper():
+class MessageMapper():
 
     # Connect to chat Mapping
 
@@ -47,7 +47,7 @@ class Message_Mapper():
     @staticmethod
     def pack_get_user_response(name: str, ip: str, port: int):
         method = Method.GET_USER.value
-        header = Message_Mapper.pack_ok_response(method)
+        header = MessageMapper.pack_ok_response(method)
 
         bytes_name: bytes = _pack_name(name)
         bytes_ip: bytes = _pack_ip(ip)
@@ -94,7 +94,7 @@ class Message_Mapper():
 
     @staticmethod
     def pack_get_list_response(simplified_list):        
-        header = Message_Mapper.pack_ok_response(Method.LIST_USERS.value)
+        header = MessageMapper.pack_ok_response(Method.LIST_USERS.value)
         
         list_size = len(simplified_list)
         list_size_bytes: bytes = struct.pack('!H', list_size)
