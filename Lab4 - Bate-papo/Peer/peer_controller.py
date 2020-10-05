@@ -1,8 +1,6 @@
 import socket as sock
-import select
 import sys
 import errno
-import threading
 from user import User
 from method import Method
 from message_mapper import MessageMapper
@@ -51,9 +49,7 @@ class PeerController:
 
     def disconnect_from_chat(self):
         connections = connections_lister.get_all_connections()
-        for (socket, thread, shutdown_event) in connections:
-            shutdown_event.set()
-            thread.join()
+        for socket in connections:
             socket.close()
 
         self.socket.close()
@@ -102,16 +98,12 @@ class PeerController:
             client_sock, address, user_name = self.accept_connection(self.listener_socket)
             print('Connected with: ', address)
 
-            shutdown_event = threading.Event()
-            client = threading.Thread(target=self.receive, args=[client_sock, shutdown_event])
-
-            connections_lister.add_connection(user_name, client_sock, client, shutdown_event)
+            connections_lister.add_connection(user_name, client_sock)
             peers_lister.add_to_peers(user_name)
-            client.start()
-            return (True, user_name)
+            return (True, user_name, client_sock)
 
         except OSError as error:
-            return (False, 'OS error: {0}'.format(error))
+            return (False, 'OS error: {0}'.format(error), None)
 
 
     def accept_connection(self, socket):
@@ -124,31 +116,18 @@ class PeerController:
         except OSError:
             raise
 
-    def receive(self, client_sock, shutdown_event: threading.Event):
-        client_sock.setblocking(False)
+    def receive(self, client_sock):
+        message = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
 
-        while True:
-            ready = select.select([client_sock], [], [], 1)[0]
+        if not message:
+            name = connections_lister.pop_connection_by_socket(client_sock)[0]
+            if name:
+                peers_lister.remove_from_peers(name)
+                message = name + ' disconnected'
+                return (False, message, None, client_sock)
 
-            if ready:
-                message = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
-
-                if not message:
-                    name = connections_lister.pop_connection_by_socket(client_sock)[0]
-                    if name:
-                        peers_lister.remove_from_peers(name)
-                        client_sock.close()
-                        print(name + ' disconnected')
-                        return
-
-                (user, msg) = MessageMapper.unpack_message_receive(message)
-
-                print('(' + user + '): ' + msg)
-
-            else:
-                if shutdown_event.is_set():
-                    client_sock.close()
-                    return
+        (user, msg) = MessageMapper.unpack_message_receive(message)
+        return (True, msg, user, None)
 
     def send(self, socket, msg):
         try:
@@ -179,16 +158,26 @@ class PeerController:
         except OSError:
             return (False, '')
 
+    
+    def get_closed_sockets(self):
+        closed_sockets = []
+        sockets = connections_lister.get_all_connections()[0]
+        for socket in sockets:
+            if socket.fileno() == -1:
+                closed_sockets.append(socket)
+
+        return closed_sockets
+
 
     def connect_with_user(self, name):
         if name == my_name:
             error_message = 'You can\'t connect to yourself, try another user :)'
-            return (False, error_message)
+            return (False, error_message, None)
 
         else:
             if peers_lister.exists_in_peers(name):
                 error_message = 'You are already connected to ' + name + ', try another user :)'
-                return (False, error_message)
+                return (False, error_message, None)
 
         get_user_request = MessageMapper.pack_get_user_request(name)
 
@@ -203,45 +192,45 @@ class PeerController:
                 user: User = MessageMapper.unpack_get_user_response(message)
 
                 new_socket = sock.socket()
-                shutdown_event = threading.Event()
-                client = threading.Thread(target=self.connect, args=(new_socket, user, shutdown_event))
-                connections_lister.add_connection(user.name, new_socket, client, shutdown_event)
-                peers_lister.add_to_peers(user.name)
-                client.start()
+                success, message = self.connect(new_socket, user)
+                if not success:
+                    return (success, message, None)
 
-                return (True, '')
+                connections_lister.add_connection(user.name, new_socket)
+                peers_lister.add_to_peers(user.name)
+
+                return (True, None, new_socket)
 
             else:
                 error_message = MessageMapper.unpack_error_response(message)
-                return (False, error_message)
+                return (False, error_message, None)
 
         except OSError as error:
             error_message = 'Failed to send message to server\nOS error: {0}'.format(error) + '\nIf the error persists, consider disconnecting'
             return (False, error_message)
     
 
-    def connect(self, socket, user: User, shutdown_event: threading.Event):
+    def connect(self, socket, user: User):
         try:
             socket.connect((user.ip_address, user.port))
 
         except OSError as error:
-            print('Failed to connect to ' + user.name + '\nOS error: {0}'.format(error))
+            error_message = 'Failed to connect to ' + user.name + '\nOS error: {0}'.format(error)
             self.disconnect_from_user(user.name)
             self.check_user(user.name)
-            return
+            return (False, error_message)
 
         id_msg = MessageMapper.pack_user_id_on_connect_message(my_name)
 
         try:
             self.send(socket, id_msg)
+            return (True, None)
 
         except OSError as error:
-            print('Failed to connect to ' + user.name + '\nOS error: {0}'.format(error))
+            error_message = 'Failed to connect to ' + user.name + '\nOS error: {0}'.format(error)
             self.disconnect_from_user(user.name)
             self.check_user(user.name)
-            return       
-
-        self.receive(socket, shutdown_event)
+            return (False, error_message)       
 
     def send_input_message_to_user(self, name, user_input):
         if name == my_name:
@@ -254,7 +243,7 @@ class PeerController:
                 return (False, error_message)
 
         message = MessageMapper.pack_message_send(my_name, user_input)
-        client_socket, thread, shutdown_event = connections_lister.get_connection_by_name(name)
+        client_socket = connections_lister.get_connection_by_name(name)
         
         try:
             self.send(client_socket, message)
@@ -282,16 +271,14 @@ class PeerController:
     def disconnect_from_user(self, name):
         if not peers_lister.exists_in_peers(name):
             error_message = 'You can\'t disconnect from a user you are not connected to.'
-            return (False, error_message)
+            return (False, error_message, None)
 
-        client_socket, thread, shutdown_event = connections_lister.pop_connection_by_name(name)
+        client_socket = connections_lister.pop_connection_by_name(name)[0]
         peers_lister.remove_from_peers(name)
 
-        shutdown_event.set()
-        thread.join()
         client_socket.close()
         message = 'Disconnected from ' + name
-        return (True, message)
+        return (True, message, client_socket)
 
     def get_chat_name(self):
         return my_name

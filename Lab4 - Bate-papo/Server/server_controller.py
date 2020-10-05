@@ -140,7 +140,10 @@ class ServerController:
         validation: bytes = MessageMapper.pack_validate_user_message()
         socket = connections_lister.get_connection_by_name(name)
         if socket:
-            socket.sendall(validation) #add timeout and exception handling
+            try:
+                socket.sendall(validation)
+            except OSError:
+                self.close_connection(socket)
         
 
     def send_error_response(self, client_sock, request_type, error_message):
