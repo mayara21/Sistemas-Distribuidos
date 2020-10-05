@@ -3,6 +3,7 @@ import select
 import sys
 from user import User
 from peer_controller import PeerController
+from peer_connections_lister import connections_lister
 
 class PeerInterface:
     inputs = [sys.stdin]
@@ -44,12 +45,14 @@ class PeerInterface:
     def show_your_message(self, name, user_input):
         print('(you to ' + name + '): ' + user_input)
 
+    def show_message(self, name, message):
+        print('(' + name + '): ' + message)
 
     def connect_to_chat(self, controller):
         while True:
             name: str = input('Enter the name you want to use in the chat\n(if you want to quit, enter leave): ')
             if name.lower() == 'leave':
-                controller.leave_chat()
+                controller.disconnect_from_chat()
             
             success, message = controller.connect_to_chat(name)
             if not success:
@@ -83,18 +86,28 @@ class PeerInterface:
         while True:
             try:
                 r, w, err = select.select(self.inputs, [], [])
-
                 for read in r:
                     if read == listener_socket:
-                        success, message = controller.accept_new_peer()
+                        success, message, client_socket = controller.accept_new_peer()
 
                         if success:
                             print('Connected with ' + message)
+                            self.inputs.append(client_socket)
                         else:
                             self.show_error(message)
 
                     elif read == socket:
                         controller.handle_server_message()
+
+                    elif connections_lister.contains(read):
+                        success, message, user, client_socket = controller.receive(read)
+
+                        if not success:
+                            print(message)                          
+                            self.inputs.remove(client_socket)
+                            client_socket.close()
+                        else:
+                            self.show_message(user, message)
 
                     elif read == sys.stdin: 
                         cmd = input()
@@ -115,9 +128,10 @@ class PeerInterface:
 
                         elif head == '/connect':
                             name = request[1]
-                            success, message = controller.connect_with_user(name)
+                            success, message, client_socket = controller.connect_with_user(name)
                             if success:
                                 print('Connected with ' + name)
+                                self.inputs.append(client_socket)
                             else:
                                 self.show_error(message)
 
@@ -140,8 +154,9 @@ class PeerInterface:
 
                         elif head == '/disconnect':
                             name = request[1]
-                            success, message = controller.disconnect_from_user(name)
+                            success, message, client_socket = controller.disconnect_from_user(name)
                             if success:
+                                self.inputs.remove(client_socket)
                                 print(message)
                             else:
                                 self.show_error(message)
