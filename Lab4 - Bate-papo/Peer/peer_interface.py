@@ -97,7 +97,9 @@ class PeerInterface:
                             self.show_error(message)
 
                     elif read == socket:
-                        controller.handle_server_message()
+                        success, message = controller.handle_server_message()
+                        if not success:
+                            self.show_error(message)
 
                     elif connections_lister.contains(read):
                         success, message, user, client_socket = controller.receive(read)
@@ -113,20 +115,20 @@ class PeerInterface:
                         cmd = input()
                         request = cmd.split(' ')
                         head = request[0].lower()
+                        request_size = len(request)
 
                         if head == '/leave':
                             controller.disconnect_from_chat()
 
                         elif head == '/list':
-                            success, user_list = controller.get_user_list()
+                            success, user_list, message = controller.get_user_list()
                             if success:
                                 name = controller.get_chat_name()
                                 self.show_list(user_list, name)
                             else:
-                                message = 'There was as error in the process, try again'
                                 self.show_error(message)
 
-                        elif head == '/connect':
+                        elif head == '/connect' and (request_size > 1):
                             name = request[1]
                             success, message, client_socket = controller.connect_with_user(name)
                             if success:
@@ -135,7 +137,7 @@ class PeerInterface:
                             else:
                                 self.show_error(message)
 
-                        elif head == '/send':
+                        elif head == '/send' and request_size > 1:
                             name = request[1]
                             message = ' '.join(request[2:])
                             success, return_message = controller.send_input_message_to_user(name, message)
@@ -152,7 +154,7 @@ class PeerInterface:
                             else:
                                 self.show_peers(user_list)
 
-                        elif head == '/disconnect':
+                        elif head == '/disconnect' and request_size > 1:
                             name = request[1]
                             success, message, client_socket = controller.disconnect_from_user(name)
                             if success:

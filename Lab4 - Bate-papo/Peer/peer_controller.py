@@ -136,15 +136,29 @@ class PeerController:
             raise
 
     def handle_server_message(self):
-        message = self.socket.recv(MAX_MESSAGE_SIZE_RECV)
-        method = MessageMapper.unpack_method(message)
-        if method == Method.VALIDATE_CONNECTION.value:
-            self.handle_validation(self.socket)
+        try:
+            message = self.socket.recv(MAX_MESSAGE_SIZE_RECV)
+            method = MessageMapper.unpack_method(message)
+            if method == Method.VALIDATE_CONNECTION.value:
+                self.handle_validation(self.socket)
+                return (True, None)
 
+        except (ConnectionResetError, ConnectionAbortedError):
+            error_message = 'Server disconnected'
+            self.disconnect_from_chat()
+            return (False, error_message)
+
+        except OSError as error:
+            message = 'OS error: {0}'.format(error) + ', try again'
+            return (False, message)
 
     def handle_validation(self, socket):
         response = MessageMapper.pack_ok_response(Method.VALIDATE_CONNECTION.value)
-        self.send(socket, response)
+        try:
+            self.send(socket, response)
+        
+        except OSError:
+            raise
 
 
     def get_user_list(self):
@@ -153,20 +167,16 @@ class PeerController:
             self.send(self.socket, get_list_request)
             get_list_response = self.socket.recv(MAX_MESSAGE_SIZE_RECV)
             user_list = MessageMapper.unpack_get_list_response(get_list_response[9:])
-            return (True, user_list)
+            return (True, user_list, None)
         
-        except OSError:
-            return (False, '')
+        except (ConnectionResetError, ConnectionAbortedError):
+            error_message = 'Server disconnected'
+            self.disconnect_from_chat()
+            return (False, None, error_message)
 
-    
-    def get_closed_sockets(self):
-        closed_sockets = []
-        sockets = connections_lister.get_all_connections()[0]
-        for socket in sockets:
-            if socket.fileno() == -1:
-                closed_sockets.append(socket)
-
-        return closed_sockets
+        except OSError as error:
+            message = 'OS error: {0}'.format(error) + ', try again'
+            return (False, None, message)
 
 
     def connect_with_user(self, name):
@@ -205,9 +215,14 @@ class PeerController:
                 error_message = MessageMapper.unpack_error_response(message)
                 return (False, error_message, None)
 
+        except (ConnectionResetError, ConnectionAbortedError):
+            error_message = 'Server disconnected'
+            self.disconnect_from_chat()
+            return (False, error_message, None)
+
         except OSError as error:
-            error_message = 'Failed to send message to server\nOS error: {0}'.format(error) + '\nIf the error persists, consider disconnecting'
-            return (False, error_message)
+            error_message = 'Failed to send message\nOS error: {0}'.format(error) + '\nIf the error persists, consider disconnecting'
+            return (False, error_message, None)
     
 
     def connect(self, socket, user: User):
@@ -273,7 +288,7 @@ class PeerController:
             error_message = 'You can\'t disconnect from a user you are not connected to.'
             return (False, error_message, None)
 
-        client_socket = connections_lister.pop_connection_by_name(name)[0]
+        client_socket = connections_lister.pop_connection_by_name(name)
         peers_lister.remove_from_peers(name)
 
         client_socket.close()
