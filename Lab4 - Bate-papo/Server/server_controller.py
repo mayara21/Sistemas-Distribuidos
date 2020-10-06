@@ -50,6 +50,7 @@ class ServerController:
         self.socket.close()
         sys.exit()
 
+
     def close_connection(self, client_socket, address=''):
         name = connections_lister.pop_connection_by_socket(client_socket)[0]
         
@@ -65,32 +66,39 @@ class ServerController:
 
     def serve(self, client_sock, address):
         while True:
-            request = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
+            try:
+                request = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
 
-            if not request:
+                if not request:
+                    self.close_connection(client_sock, address)
+                    return
+
+                method = MessageMapper.unpack_method(request)
+                message = request[8:]
+
+                if method == Method.ENTER_CHAT.value:
+                    user: User = MessageMapper.unpack_connect_request(message)
+                    self.handle_connection_request(client_sock, user)
+                
+                elif method == Method.GET_USER.value:
+                    user_name: str = MessageMapper.unpack_get_user_request(message)
+                    self.handle_get_user_request(client_sock, user_name)
+
+                elif method == Method.CHECK_USER_CONNECTION.value:
+                    user_name: str = MessageMapper.unpack_check_user_request(message )
+                    self.handle_check_request(user_name)
+
+                elif method == Method.LIST_USERS.value:
+                    self.handle_get_list_request(client_sock)
+
+                elif method == Method.VALIDATE_CONNECTION.value:
+                    self.handle_validate_message(client_sock, message)
+
+            except (ConnectionAbortedError, ConnectionResetError):
                 self.close_connection(client_sock, address)
-                return
 
-            method = MessageMapper.unpack_method(request)
-            message = request[8:]
-
-            if method == Method.ENTER_CHAT.value:
-                user: User = MessageMapper.unpack_connect_request(message)
-                self.handle_connection_request(client_sock, user)
-            
-            elif method == Method.GET_USER.value:
-                user_name: str = MessageMapper.unpack_get_user_request(message)
-                self.handle_get_user_request(client_sock, user_name)
-
-            elif method == Method.CHECK_USER_CONNECTION.value:
-                user_name: str = MessageMapper.unpack_check_user_request(message )
-                self.handle_check_request(user_name)
-
-            elif method == Method.LIST_USERS.value:
-                self.handle_get_list_request(client_sock)
-
-            elif method == Method.VALIDATE_CONNECTION.value:
-                self.handle_validate_message(client_sock, message)
+            except OSError as error:
+                print('OS error: {0}'.format(error))
 
 
     def handle_connection_request(self, client_sock, new_user):
