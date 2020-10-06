@@ -88,6 +88,11 @@ class PeerController:
                 error_message = MessageMapper.unpack_error_response(message)
                 return (False, error_message)
 
+        except (ConnectionAbortedError, ConnectionResetError) as error:
+            error_message = 'Connection reset.\nOS error: {0}'.format(error)
+            self.disconnect_from_user(name)
+            return (False, error_message)
+
         except OSError as error:
             error_message = 'Failed to send message to server. Try again.\nOS error: {0}'.format(error)
             return (False, error_message)
@@ -117,17 +122,26 @@ class PeerController:
             raise
 
     def receive(self, client_sock):
-        message = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
+        try:
+            message = client_sock.recv(MAX_MESSAGE_SIZE_RECV)
 
-        if not message:
+            if not message:
+                name = connections_lister.pop_connection_by_socket(client_sock)[0]
+                if name:
+                    peers_lister.remove_from_peers(name)
+                    message = name + ' disconnected'
+                    return (False, message, None, client_sock)
+
+            (user, msg) = MessageMapper.unpack_message_receive(message)
+            return (True, msg, user, None)
+
+        except (ConnectionAbortedError, ConnectionResetError) as error:
+            error_message = 'Connection reset.\nOS error: {0}'.format(error)
             name = connections_lister.pop_connection_by_socket(client_sock)[0]
             if name:
                 peers_lister.remove_from_peers(name)
-                message = name + ' disconnected'
+                message = error_message + '\n' + name + ' disconnected'
                 return (False, message, None, client_sock)
-
-        (user, msg) = MessageMapper.unpack_message_receive(message)
-        return (True, msg, user, None)
 
     def send(self, socket, msg):
         try:
@@ -151,6 +165,7 @@ class PeerController:
         except OSError as error:
             message = 'OS error: {0}'.format(error) + ', try again'
             return (False, message)
+
 
     def handle_validation(self, socket):
         response = MessageMapper.pack_ok_response(Method.VALIDATE_CONNECTION.value)
