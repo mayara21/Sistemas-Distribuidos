@@ -13,20 +13,27 @@ inputs = [sys.stdin]
 ring = []
 clients = []
 
+search_id_counter = 0
+
+
 def insert(originNode, key, value):
     node = ring[originNode]
     print('no origem: ', node.address, node.port, node.id)
     connection = rpyc.connect(node.address, node.port)
-
-    print(type(connection.root))
-    print(connection.root.get_service_name())
-
     connection.root.exposed_insert_key(key, value)
     connection.close()
 
-def search(searchId, originNode, key):
-    resultNode = None
-    return resultNode
+
+def print_search_result(search_id_counter, found_node_id, result):
+    print('Search ' + str(search_id_counter) + ' found the value ' + str(result) + ' in node ' + str(found_node_id))
+
+
+def search(originNode, key):
+    node = ring[originNode]
+    connection = rpyc.connect(node.address, node.port)
+    connection.root.exposed_search_key(print_search_result, key, search_id_counter)
+    connection.close()
+    search_id_counter += 1
 
 
 def start():
@@ -59,7 +66,7 @@ def create_ring(quant):
 
 def main():
     
-    quant = input('Insert N: ') # insert originNode key value
+    quant = input('Insert N: ')
     create_ring(int(quant))
 
     while True:
@@ -82,10 +89,10 @@ def main():
             insert(origin, key, value)
 
         elif head == 'search' and request_size > 2:
-            origin = request[1]
+            origin = int(request[1])
             key = request[2]
 
-            # search(origin, key)
+            search(origin, key)
 
 
 if __name__ == "__main__":

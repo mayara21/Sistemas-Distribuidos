@@ -26,17 +26,17 @@ class Node(rpyc.Service):
 
     def start(self):
         client = ThreadedServer(self, port=self.port)
-        print('lancei no ', self.id)
-
         client.start()
 
 
     def exposed_insert_key(self, key, value):
-        #hash_key = hashlib.sha1(key.encode())
-        hash_key = hash(key)
+        hash_key = hashlib.sha1(key.encode()).hexdigest
+        hash_key = int(hash_key, 16)
+
         mod_hash_key = hash_key % pow(2, self.quant)
         print('hash: ', mod_hash_key)
         node_to_insert = None
+
         if mod_hash_key == self.id:
             print('inseri no: ', self.id)
             self.content[mod_hash_key] = value
@@ -70,5 +70,13 @@ class Node(rpyc.Service):
                     connection.root.exposed_insert_hash(hash_key, value)
                     connection.close()
                     break
+
+
+    def exposed_search_key(self, caller, key, search_id):
+        hash_key = hashlib.sha1(key.encode()).hexdigest
+        hash_key = int(hash_key, 16)
+        mod_hash_key = hash_key % pow(2, self.quant)
+
+        if mod_hash_key == self.id:
 
     #def find_successor(id: int):
