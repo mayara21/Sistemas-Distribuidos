@@ -65,10 +65,21 @@ def create_ring(quant):
     start()
         
 
+def print_instructions():
+    print('To insert a key-value pair, type: ')
+    print('insert origin_node_id key value')
+    print('To search a key, type: ')
+    print('search origin_node_id key')
+    print('To get info about a node: ')
+    print('info node_id')
+
 def main():
     
     quant = input('Insert N: ')
     create_ring(int(quant))
+    print('Ring created!')
+    
+    print_instructions()
 
     while True:
         command = input()
@@ -99,9 +110,10 @@ def main():
             node_id = int(request[1])
             node = ring[node_id]
             print(node)
-            
+
         else:
             print('Command not found')
+            print_instructions()
 
 
 if __name__ == "__main__":
