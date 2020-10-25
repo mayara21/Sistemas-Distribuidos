@@ -5,16 +5,14 @@ import multiprocessing
 import rpyc
 from node import Node
 
-HOST: str = ''
+HOST: str = 'localhost'
 PORT: int = 5000
 
 inputs = [sys.stdin]
 
 ring = []
 clients = []
-
 search_id_counter = 0
-
 
 def insert(originNode, key, value):
     node = ring[originNode]
@@ -25,14 +23,17 @@ def insert(originNode, key, value):
 
 
 def print_search_result(search_id_counter, found_node_id, result):
-    print('Search ' + str(search_id_counter) + ' found the value ' + str(result) + ' in node ' + str(found_node_id))
+    print('Search ' + str(search_id_counter) + ' found the value "' + str(result) + '" in node ' + str(found_node_id))
 
 
 def search(originNode, key):
+    global search_id_counter
     node = ring[originNode]
+
     connection = rpyc.connect(node.address, node.port)
     connection.root.exposed_search_key(print_search_result, key, search_id_counter)
     connection.close()
+
     search_id_counter += 1
 
 
@@ -47,7 +48,7 @@ def create_ring(quant):
     ring_size = pow(2, quant)
 
     for id in range (ring_size):
-        ring.append(Node(id, '', PORT + id + 1))
+        ring.append(Node(id, 'localhost', PORT + id + 1))
 
     for id in range (ring_size):
         node: Node = ring[id]
@@ -77,7 +78,7 @@ def main():
 
         if command == 'close':
             for c in clients: 
-                c.join()
+                c.terminate()
             sys.exit()
             break
 
@@ -94,7 +95,14 @@ def main():
 
             search(origin, key)
 
+        elif head == 'info' and request_size > 1:
+            node_id = int(request[1])
+            node = ring[node_id]
+            print(node)
+            
+        else:
+            print('Command not found')
+
 
 if __name__ == "__main__":
-    main()
-        
+    main()       
