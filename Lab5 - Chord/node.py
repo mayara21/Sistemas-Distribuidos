@@ -56,9 +56,13 @@ class Node(rpyc.Service):
             node_to_insert = self._closest_preceding_node(mod_hash_key)
         
         if node_to_insert:
-            connection = rpyc.connect(node_to_insert.address, node_to_insert.port)
-            connection.root.exposed_insert_hash(hash_key, value)
-            connection.close()
+            try:
+                connection = rpyc.connect(node_to_insert.address, node_to_insert.port)
+                connection.root.exposed_insert_hash(hash_key, value)
+                connection.close()
+            except (ConnectionRefusedError, ConnectionResetError, ConnectionError, ConnectionAbortedError):
+                print('There was a problem connecting to the node, try later')
+                return
 
 
     def exposed_search_key(self, caller, key, search_id):
@@ -74,8 +78,13 @@ class Node(rpyc.Service):
         mod_hash_key = hash_key % pow(2, self.quant)
 
         if mod_hash_key == self.id:
-            value = self.content[hash_key]
-            caller(search_id, self.id, value)
+            try:
+                value = self.content[hash_key]
+                caller(search_id, self.id, value)
+            
+            except KeyError:
+                message = 'The key was not found'
+                caller(search_id, None, message)
 
         elif mod_hash_key == self.successor.id:
             node_to_search = self.successor
@@ -84,9 +93,14 @@ class Node(rpyc.Service):
             node_to_search = self._closest_preceding_node(mod_hash_key)
         
         if node_to_search:
-            connection = rpyc.connect(node_to_search.address, node_to_search.port)
-            connection.root.exposed_search_hash(caller, hash_key, search_id)
-            connection.close()
+            try:
+                connection = rpyc.connect(node_to_search.address, node_to_search.port)
+                connection.root.exposed_search_hash(caller, hash_key, search_id)
+                connection.close()
+                
+            except (ConnectionRefusedError, ConnectionResetError, ConnectionError, ConnectionAbortedError):
+                message = 'There was a problem connecting to the node, try later'
+                caller(search_id, None, message)                
 
 
     def _closest_preceding_node(self, hash_key):

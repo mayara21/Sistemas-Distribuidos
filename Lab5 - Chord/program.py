@@ -6,7 +6,7 @@ import rpyc
 from node import Node
 from rpyc.utils.server import ThreadedServer 
 
-class Server(rpyc.Service):
+class Program(rpyc.Service):
 
     HOST: str = 'localhost'
     PORT: int = 5000
@@ -51,6 +51,7 @@ class Server(rpyc.Service):
             return None
 
 
+    # alternate method that returns all the nodes at once
     def exposed_nodes(self):
         nodes = []
         for node in self.ring:
@@ -69,5 +70,5 @@ class Server(rpyc.Service):
 
 
 if __name__ == "__main__":
-    srv = Server()
-    srv.main()
+    prog = Program()
+    prog.main()
