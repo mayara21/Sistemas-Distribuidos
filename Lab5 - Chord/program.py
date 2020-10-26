@@ -3,13 +3,14 @@ import sys
 import select
 import multiprocessing
 import rpyc
+import random
 from node import Node
 from rpyc.utils.server import ThreadedServer 
 
 class Program(rpyc.Service):
 
     HOST: str = 'localhost'
-    PORT: int = 5000
+    PORT: int = 6000
 
     ring = []
     clients = []
@@ -25,7 +26,7 @@ class Program(rpyc.Service):
         ring_size = pow(2, quant)
 
         for id in range (ring_size):
-            self.ring.append(Node(id, 'localhost', self.PORT + id + 1))
+            self.ring.append(Node(id, 'localhost', random.randint(7000, 15000)))
 
         for id in range (ring_size):
             node: Node = self.ring[id]

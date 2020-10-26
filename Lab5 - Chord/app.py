@@ -6,7 +6,7 @@ import rpyc
 from node import Node
 
 SERVER_HOST: str = 'localhost'
-SERVER_PORT: int = 5000
+SERVER_PORT: int = 6000
 
 nodes = []
 
@@ -91,8 +91,8 @@ def print_instructions():
     print('insert origin_node_id key value')
     print('To search a key, type: ')
     print('search origin_node_id key')
-    print('To get info about a node: ')
-    print('info node_id')
+    #print('To get info about a node: ')
+    #print('info node_id')
 
 def main():
 
