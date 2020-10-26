@@ -16,7 +16,6 @@ search_id_counter = 0
 
 def insert(originNode, key, value):
     node = ring[originNode]
-    print('no origem: ', node.address, node.port, node.id)
     connection = rpyc.connect(node.address, node.port)
     connection.root.exposed_insert_key(key, value)
     connection.close()
@@ -78,7 +77,7 @@ def main():
     quant = input('Insert N: ')
     create_ring(int(quant))
     print('Ring created!')
-    
+
     print_instructions()
 
     while True:
