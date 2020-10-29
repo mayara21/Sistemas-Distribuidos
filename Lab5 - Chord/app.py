@@ -30,7 +30,7 @@ def insert(originNode, key, value):
         print('There was a problem connecting to the node, try later')
         return
 
-
+# function to be passed to node (to be invoked when key is found)
 def print_search_result(search_id_counter, found_node_id, result):
     if found_node_id is not None:
         print('Search ' + str(search_id_counter) + ' found the value "' + str(result) + '" in node ' + str(found_node_id))
@@ -91,8 +91,6 @@ def print_instructions():
     print('insert origin_node_id key value')
     print('To search a key, type: ')
     print('search origin_node_id key')
-    #print('To get info about a node: ')
-    #print('info node_id')
 
 def main():
 

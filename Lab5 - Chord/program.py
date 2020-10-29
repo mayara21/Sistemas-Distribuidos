@@ -15,6 +15,7 @@ class Program(rpyc.Service):
     ring = []
     clients = []
 
+    # initialize a process to run each node
     def start(self):
         for node in self.ring:
             client = multiprocessing.Process(target=node.start)
@@ -22,12 +23,21 @@ class Program(rpyc.Service):
             self.clients.append(client)
 
 
+    # creates Chord Ring
     def create_ring(self, quant):
         ring_size = pow(2, quant)
+        ports = []
 
+        # creates each node, adding to the ring
         for id in range (ring_size):
-            self.ring.append(Node(id, 'localhost', random.randint(7000, 15000)))
+            port = random.randint(7000, 15000) # generates a random port, checking for repetitions
+            while port in ports:
+                port = random.randint(7000, 15000)
+            
+            ports.append(port)
+            self.ring.append(Node(id, 'localhost', port))
 
+        # adds successor and finger table for each node
         for id in range (ring_size):
             node: Node = self.ring[id]
             successor: Node = self.ring[id + 1] if (id + 1 < ring_size) else self.ring[0]
@@ -42,7 +52,7 @@ class Program(rpyc.Service):
 
         self.start()
 
-
+    # method to get node info (to be called remotely)
     def exposed_get_node(self, node_id):
         try:
             node = self.ring[node_id]
@@ -62,10 +72,11 @@ class Program(rpyc.Service):
 
 
     def main(self):
-        quant = input('Insert N: ')
+        quant = input('Insert N: ') # receives the desired N to create 2ˆn nodes
         self.create_ring(int(quant))
         print('Ring created!')
 
+        # initialize the main program to receive RPC calls
         srv = ThreadedServer(self, port = self.PORT)
         srv.start()
 
