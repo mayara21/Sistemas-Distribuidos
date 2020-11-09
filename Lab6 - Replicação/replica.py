@@ -109,11 +109,13 @@ class Replica:
         self.listener_socket.bind((self.ip, self.port))
         self.listener_socket.listen(5)
         print(self.ip, self.port)
-        #self.listener_socket.setblocking(False)
+        #self.listener_socket.setblocking(True)
 
 
-    def accept_connection(self):
+    def accept_connection(self, inputs):
         (client_socket, address) = self.listener_socket.accept()
+        inputs.append(client_socket)
+
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
 
         id = _unpack_id(message)
@@ -121,30 +123,32 @@ class Replica:
         print('New connection with ', id)
         return (client_socket, address, id)
 
+
     def connect(self, id):
-        new_socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
+        new_socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)     
         new_socket.connect((self.ip, self.base_port + id))
 
         id_message = _pack_id(self.id)
         new_socket.sendall(id_message)
         self.connections[id] = new_socket
 
+        return new_socket
+
 
     def _request_write(self, client_socket, id):
         print('Received write request thread')
 
         with self.condition:
-            print('batata')
             while self.local_changes > 0:
                 self.condition.wait()
             
             if self.primary_copy_id == self.id:
-                success_message = _pack_status(Status.OK)
+                success_message = _pack_status(int(Status.OK.value))
                 client_socket.sendall(success_message)
                 self.primary_copy_id = id
 
             else:
-                fail_message = _pack_status(Status.ERROR) # add error message
+                fail_message = _pack_status(int(Status.ERROR.value)) # add error message
                 client_socket.sendall(fail_message)
             
             self.condition.notifyAll()
@@ -152,6 +156,7 @@ class Replica:
 
     def receive(self, client_socket):
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
+        print(message)
         method = _unpack_method(message)
 
         print('Received a message', message)
@@ -176,6 +181,7 @@ class Replica:
         if (self.local_changes == 0):
             return 'No local changes to commit'
         else:
+            changes = self.local_changes
             update_message = _pack_update_value(self.id, self.value)
             self._multicast(update_message)
 
@@ -183,7 +189,7 @@ class Replica:
                 self.local_changes = 0
                 self.condition.notify()
                 
-            return str(self.local_changes) + ' changes successfully commited'
+            return str(changes) + ' changes successfully commited'
 
 
     def update_primary_copy(self, primary_copy_id):
@@ -191,6 +197,7 @@ class Replica:
 
 
     def change_value(self, new_value):
+        print('Vou tentar alterar')
         if self.primary_copy_id == self.id:
             self.local_changes += 1
             self._update_value(self.id, new_value)
@@ -198,11 +205,22 @@ class Replica:
 
         else: # ask for the primary copy
             request_primary = _pack_request_write(self.id)
+            primary_socket: sock.socket
 
-            primary_socket = self.connections[self.primary_copy_id]
+            try:
+                primary_socket = self.connections[self.primary_copy_id]
+
+            except KeyError:
+                primary_socket = self.connect(self.primary_copy_id)
+
+            print('vou enviar request')
             primary_socket.sendall(request_primary)
+            print('enviado, esperando resposta')
             message = primary_socket.recv(MAX_MESSAGE_SIZE_RECV)
+            print('oiii')
+            print(message)
             status = _unpack_status(message[3:])
+
             if status:
                 self.local_changes += 1
                 self._update_value(self.id, new_value)
@@ -261,15 +279,18 @@ def main(id: int):
     inputs.append(replica.listener_socket)
 
     while(True):
+        print(inputs)
         r, w, err = select.select(inputs, [], [])
 
         for read in r:
             if read == replica.listener_socket:
-                client_socket, address, id = replica.accept_connection()
+                client_socket, address, id = replica.accept_connection(inputs)
 
-                inputs.append(client_socket)
+                #inputs.append(client_socket)
+                print('Listener de conexoes!')
 
             elif replica.contains(read):
+                print('socket!')
                 replica.receive(read)
 
             elif read == sys.stdin:
@@ -306,6 +327,9 @@ def main(id: int):
 
                 else:
                     print('Command not found')
+
+            else:
+                print('Outro')
 
 if __name__ == "__main__":
     main(int(sys.argv[1]))
