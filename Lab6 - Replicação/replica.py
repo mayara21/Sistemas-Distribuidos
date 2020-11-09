@@ -104,7 +104,6 @@ class Replica:
 
         self._init_listener()
 
-
     def _init_listener(self):
         self.listener_socket.bind((self.ip, self.port))
         self.listener_socket.listen(5)
@@ -124,20 +123,18 @@ class Replica:
         return (client_socket, address, id)
 
 
-    def connect(self, id):
+    def connect(self, id, inputs):
         new_socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)     
         new_socket.connect((self.ip, self.base_port + id))
-
         id_message = _pack_id(self.id)
         new_socket.sendall(id_message)
         self.connections[id] = new_socket
+        inputs.append(new_socket)
 
         return new_socket
 
 
     def _request_write(self, client_socket, id):
-        print('Received write request thread')
-
         with self.condition:
             while self.local_changes > 0:
                 self.condition.wait()
@@ -156,10 +153,8 @@ class Replica:
 
     def receive(self, client_socket):
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
-        print(message)
-        method = _unpack_method(message)
-
         print('Received a message', message)
+        method = _unpack_method(message)
 
         if method == Method.UPDATE_VALUE.value:
             id, value = _unpack_update_value(message[3:])
@@ -171,7 +166,6 @@ class Replica:
             self.update_primary_copy(id)
 
         elif method == Method.REQUEST_WRITE.value:
-            print('Received write request')
             id = _unpack_id(message[3:])
             thread = threading.Thread(target=self._request_write, args=(client_socket, id))
             thread.start()
@@ -197,7 +191,6 @@ class Replica:
 
 
     def change_value(self, new_value):
-        print('Vou tentar alterar')
         if self.primary_copy_id == self.id:
             self.local_changes += 1
             self._update_value(self.id, new_value)
@@ -205,23 +198,17 @@ class Replica:
 
         else: # ask for the primary copy
             request_primary = _pack_request_write(self.id)
-            primary_socket: sock.socket
+            primary_socket = self.connections[self.primary_copy_id]
 
-            try:
-                primary_socket = self.connections[self.primary_copy_id]
-
-            except KeyError:
-                primary_socket = self.connect(self.primary_copy_id)
-
-            print('vou enviar request')
             primary_socket.sendall(request_primary)
-            print('enviado, esperando resposta')
             message = primary_socket.recv(MAX_MESSAGE_SIZE_RECV)
-            print('oiii')
             print(message)
-            status = _unpack_status(message[3:])
+            status = _unpack_status(message)
 
-            if status:
+            if status == Status.OK.value:
+                self.primary_copy_id = self.id
+                self._notify_primary_copy()
+
                 self.local_changes += 1
                 self._update_value(self.id, new_value)
                 return True, 'Value updated'
@@ -229,9 +216,9 @@ class Replica:
             else:
                 return False, 'You can not alter the value'
 
+
     def _update_value(self, origin_replica, new_value):
         self.value = new_value
-        print('Value updated!!')
         self.history.append((origin_replica, new_value))
 
 
@@ -241,16 +228,6 @@ class Replica:
 
 
     def _multicast(self, message):
-        for i in range(1, 5):
-            try:
-                if i != self.id and self.connections[i]:
-                    print('Connection already exists', i)
-
-            except KeyError:
-                self.connect(i)
-
-        print(self.connections)
-
         for id, socket in self.connections.items():
             socket.sendall(message)
 
@@ -276,21 +253,31 @@ class Replica:
 def main(id: int):
     inputs = [sys.stdin]
     replica = Replica(id)
-    inputs.append(replica.listener_socket)
 
-    while(True):
-        print(inputs)
+    for i in range(2, replica.id + 1):
+        replica.accept_connection(inputs)
+    
+    for i in range(replica.id + 1, 5):
+        while True:
+            try:
+                replica.connect(i, inputs)
+                break
+
+            except ConnectionRefusedError:
+                pass
+
+
+    while True:
         r, w, err = select.select(inputs, [], [])
 
         for read in r:
-            if read == replica.listener_socket:
-                client_socket, address, id = replica.accept_connection(inputs)
+            # if read == replica.listener_socket:
+            #     client_socket, address, id = replica.accept_connection(inputs)
 
-                #inputs.append(client_socket)
-                print('Listener de conexoes!')
+            #     #inputs.append(client_socket)
+            #     print('Listener de conexoes!')
 
-            elif replica.contains(read):
-                print('socket!')
+            if replica.contains(read):
                 replica.receive(read)
 
             elif read == sys.stdin:
