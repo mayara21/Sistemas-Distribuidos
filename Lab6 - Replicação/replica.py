@@ -91,6 +91,7 @@ class Replica:
     connections: dict = {}
     history = []
     listener_socket: sock.socket
+    requesting_hat_count: int = 0
 
     condition = threading.Condition()
 
@@ -107,8 +108,6 @@ class Replica:
     def _init_listener(self):
         self.listener_socket.bind((self.ip, self.port))
         self.listener_socket.listen(5)
-        print(self.ip, self.port)
-        #self.listener_socket.setblocking(True)
 
 
     def accept_connection(self, inputs):
@@ -119,7 +118,6 @@ class Replica:
 
         id = _unpack_id(message)
         self.connections[id] = client_socket
-        print('New connection with ', id)
         return (client_socket, address, id)
 
 
@@ -136,6 +134,7 @@ class Replica:
 
     def _request_write(self, client_socket, id):
         with self.condition:
+            self.requesting_hat_count += 1
             while self.local_changes > 0:
                 self.condition.wait()
             
@@ -147,8 +146,10 @@ class Replica:
             else:
                 fail_message = _pack_status(int(Status.ERROR.value)) # add error message
                 client_socket.sendall(fail_message)
-            
+
+            self.requesting_hat_count -= 1            
             self.condition.notifyAll()
+
 
 
     def receive(self, client_socket):
@@ -176,12 +177,16 @@ class Replica:
             return 'No local changes to commit'
         else:
             changes = self.local_changes
-            update_message = _pack_update_value(self.id, self.value)
-            self._multicast(update_message)
 
             with self.condition:
                 self.local_changes = 0
                 self.condition.notify()
+
+                while self.requesting_hat_count > 0:
+                    self.condition.wait()
+
+            update_message = _pack_update_value(self.id, self.value)
+            self._multicast(update_message)
                 
             return str(changes) + ' changes successfully commited'
 
@@ -201,12 +206,13 @@ class Replica:
             primary_socket = self.connections[self.primary_copy_id]
 
             primary_socket.sendall(request_primary)
+            print('enviei')
             message = primary_socket.recv(MAX_MESSAGE_SIZE_RECV)
-            print(message)
+            print('return: ', message)
             status = _unpack_status(message)
 
             if status == Status.OK.value:
-                self.primary_copy_id = self.id
+                self.update_primary_copy(self.id)
                 self._notify_primary_copy()
 
                 self.local_changes += 1
@@ -248,12 +254,26 @@ class Replica:
 
         return found_id
 
+    def disconnect_all(self):
+        for id, client_socket in self.connections.items():
+            client_socket.close()
+        
+        self.listener_socket.close()
 
+
+def print_instructions():
+    print('To read the value, enter \'/read\'')
+    print('To get primary copy replica id, enter \'/primary\'')
+    print('To get local history, enter \'/history\'')
+    print('To alter the value, enter \'/update new_value\'')
+    print('To commit all alterations, enter \'/commit\'')
+    print('To close the program, enter \'/close\'')
 
 def main(id: int):
     inputs = [sys.stdin]
     replica = Replica(id)
 
+    print('Getting ready...')
     for i in range(2, replica.id + 1):
         replica.accept_connection(inputs)
     
@@ -266,17 +286,13 @@ def main(id: int):
             except ConnectionRefusedError:
                 pass
 
+    print('Ready!')
+    print_instructions()
 
     while True:
         r, w, err = select.select(inputs, [], [])
 
         for read in r:
-            # if read == replica.listener_socket:
-            #     client_socket, address, id = replica.accept_connection(inputs)
-
-            #     #inputs.append(client_socket)
-            #     print('Listener de conexoes!')
-
             if replica.contains(read):
                 replica.receive(read)
 
@@ -287,6 +303,9 @@ def main(id: int):
 
                 if head == '/read':
                     print(replica.value)
+
+                elif head == '/primary':
+                    print(replica.primary_copy_id)
 
                 elif head == '/history':
                     history = replica.history
@@ -310,13 +329,15 @@ def main(id: int):
                     print(message)
 
                 elif head == '/close':
-                    break
+                    replica.disconnect_all()
+                    sys.exit()
 
                 else:
                     print('Command not found')
 
             else:
                 print('Outro')
+
 
 if __name__ == "__main__":
     main(int(sys.argv[1]))
