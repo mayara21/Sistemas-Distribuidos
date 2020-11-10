@@ -88,12 +88,15 @@ class Replica:
     primary_copy_id: int
     value: int
     local_changes: int
-    connections: dict = {}
+    update_sockets: dict = {}
+    ret_sockets: dict = {}
     history = []
     listener_socket: sock.socket
     requesting_hat_count: int = 0
 
     condition = threading.Condition()
+    update_thread: threading.Thread = None
+
 
     def __init__(self, id):
         self.id = id
@@ -110,29 +113,28 @@ class Replica:
         self.listener_socket.listen(5)
 
 
-    def accept_connection(self, inputs):
+    def accept_connection(self, socket_list):
         (client_socket, address) = self.listener_socket.accept()
-        inputs.append(client_socket)
 
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
 
         id = _unpack_id(message)
-        self.connections[id] = client_socket
-        return (client_socket, address, id)
+        socket_list[id] = client_socket
+        return client_socket
 
 
-    def connect(self, id, inputs):
-        new_socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)     
+    def connect(self, id, socket_list):
+        new_socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         new_socket.connect((self.ip, self.base_port + id))
+
         id_message = _pack_id(self.id)
         new_socket.sendall(id_message)
-        self.connections[id] = new_socket
-        inputs.append(new_socket)
+        socket_list[id] = new_socket
 
         return new_socket
 
 
-    def _request_write(self, client_socket, id):
+    def _request_write(self, id):
         with self.condition:
             self.requesting_hat_count += 1
             while self.local_changes > 0:
@@ -140,12 +142,14 @@ class Replica:
             
             if self.primary_copy_id == self.id:
                 success_message = _pack_status(int(Status.OK.value))
-                client_socket.sendall(success_message)
+                print('vou enviar sucesso')
+                self.ret_sockets[id].sendall(success_message)
+                print('enviei')
                 self.primary_copy_id = id
 
             else:
                 fail_message = _pack_status(int(Status.ERROR.value)) # add error message
-                client_socket.sendall(fail_message)
+                self.ret_sockets[id].sendall(fail_message)
 
             self.requesting_hat_count -= 1            
             self.condition.notifyAll()
@@ -168,7 +172,7 @@ class Replica:
 
         elif method == Method.REQUEST_WRITE.value:
             id = _unpack_id(message[3:])
-            thread = threading.Thread(target=self._request_write, args=(client_socket, id))
+            thread = threading.Thread(target=self._request_write, args=(id,))
             thread.start()
 
 
@@ -178,6 +182,11 @@ class Replica:
         else:
             changes = self.local_changes
 
+            print('update value por: ', self.id)
+            update_message = _pack_update_value(self.id, self.value)
+            self._multicast(update_message)
+            print('mandei update')
+
             with self.condition:
                 self.local_changes = 0
                 self.condition.notify()
@@ -185,14 +194,32 @@ class Replica:
                 while self.requesting_hat_count > 0:
                     self.condition.wait()
 
-            update_message = _pack_update_value(self.id, self.value)
-            self._multicast(update_message)
                 
             return str(changes) + ' changes successfully commited'
 
 
     def update_primary_copy(self, primary_copy_id):
         self.primary_copy_id = primary_copy_id
+
+    
+    def _request_primary_copy(self, value):
+        request_primary = _pack_request_write(self.id)
+        primary_socket = self.update_sockets[self.primary_copy_id]
+
+        primary_socket.sendall(request_primary)
+        message = self.ret_sockets[self.primary_copy_id].recv(MAX_MESSAGE_SIZE_RECV)
+        status = _unpack_status(message)
+        print('received permission')
+        if status == Status.OK.value:
+            self.update_primary_copy(self.id)
+            self._notify_primary_copy()
+
+            self.local_changes += 1
+            self._update_value(self.id, value)
+            print('Value updated')
+        
+        else:
+            print('You can not alter the value')
 
 
     def change_value(self, new_value):
@@ -202,25 +229,14 @@ class Replica:
             return True, 'Value updated'
 
         else: # ask for the primary copy
-            request_primary = _pack_request_write(self.id)
-            primary_socket = self.connections[self.primary_copy_id]
-
-            primary_socket.sendall(request_primary)
-            print('enviei')
-            message = primary_socket.recv(MAX_MESSAGE_SIZE_RECV)
-            print('return: ', message)
-            status = _unpack_status(message)
-
-            if status == Status.OK.value:
-                self.update_primary_copy(self.id)
-                self._notify_primary_copy()
-
-                self.local_changes += 1
-                self._update_value(self.id, new_value)
-                return True, 'Value updated'
+            if self.update_thread is not None and self.update_thread.is_alive():
+                return False, 'Waiting for primary copy'
             
             else:
-                return False, 'You can not alter the value'
+                self.update_thread = threading.Thread(target=self._request_primary_copy, args=(new_value,))
+                self.update_thread.start()
+
+                return False, 'Requesting primary copy'
 
 
     def _update_value(self, origin_replica, new_value):
@@ -234,7 +250,7 @@ class Replica:
 
 
     def _multicast(self, message):
-        for id, socket in self.connections.items():
+        for id, socket in self.update_sockets.items():
             socket.sendall(message)
 
 
@@ -248,15 +264,18 @@ class Replica:
 
     def _get_id_by_socket(self, socket):
         found_id = None
-        for id, client_socket in self.connections.items():
+        for id, client_socket in self.update_sockets.items():
             if client_socket == socket:
                 found_id = id
 
         return found_id
 
     def disconnect_all(self):
-        for id, client_socket in self.connections.items():
+        for id, client_socket in self.update_sockets.items():
             client_socket.close()
+
+        for id, ret_socket in self.ret_sockets.items():
+            ret_socket.close()
         
         self.listener_socket.close()
 
@@ -269,23 +288,40 @@ def print_instructions():
     print('To commit all alterations, enter \'/commit\'')
     print('To close the program, enter \'/close\'')
 
+
 def main(id: int):
     inputs = [sys.stdin]
     replica = Replica(id)
 
     print('Getting ready...')
     for i in range(2, replica.id + 1):
-        replica.accept_connection(inputs)
+        inputs.append(replica.accept_connection(replica.update_sockets))
     
     for i in range(replica.id + 1, 5):
         while True:
             try:
-                replica.connect(i, inputs)
+                inputs.append(replica.connect(i, replica.update_sockets))
                 break
 
             except ConnectionRefusedError:
                 pass
 
+
+    for i in range(2, replica.id + 1):
+        replica.accept_connection(replica.ret_sockets)
+    
+    for i in range(replica.id + 1, 5):
+        while True:
+            try:
+                replica.connect(i, replica.ret_sockets)
+                break
+
+            except ConnectionRefusedError:
+                pass
+
+
+    print(replica.ret_sockets)
+    print(replica.update_sockets)
     print('Ready!')
     print_instructions()
 
