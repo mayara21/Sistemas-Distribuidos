@@ -95,6 +95,7 @@ class Replica:
     requesting_hat_count: int = 0
 
     condition = threading.Condition()
+    lock = threading.Lock()
     update_thread: threading.Thread = None
 
 
@@ -117,6 +118,9 @@ class Replica:
         (client_socket, address) = self.listener_socket.accept()
 
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
+        if not message:
+            print('Other replica disconnected. Closing program...')
+            self.disconnect_all()
 
         id = _unpack_id(message)
         socket_list[id] = client_socket
@@ -142,9 +146,7 @@ class Replica:
             
             if self.primary_copy_id == self.id:
                 success_message = _pack_status(int(Status.OK.value))
-                print('vou enviar sucesso')
                 self.ret_sockets[id].sendall(success_message)
-                print('enviei')
                 self.primary_copy_id = id
 
             else:
@@ -157,13 +159,17 @@ class Replica:
 
 
     def receive(self, client_socket):
+        self.lock.acquire()
         message = client_socket.recv(MAX_MESSAGE_SIZE_RECV)
-        print('Received a message', message)
+
+        if not message:
+            print('Other replica disconnected. Closing program...')
+            self.disconnect_all()
+
         method = _unpack_method(message)
 
         if method == Method.UPDATE_VALUE.value:
             id, value = _unpack_update_value(message[3:])
-            print('Received new value')
             self._update_value(id, value)
 
         elif method == Method.ANNOUNCE_PRIMARY.value:
@@ -175,6 +181,8 @@ class Replica:
             thread = threading.Thread(target=self._request_write, args=(id,))
             thread.start()
 
+        self.lock.release()
+
 
     def commit(self):
         if (self.local_changes == 0):
@@ -182,10 +190,8 @@ class Replica:
         else:
             changes = self.local_changes
 
-            print('update value por: ', self.id)
             update_message = _pack_update_value(self.id, self.value)
             self._multicast(update_message)
-            print('mandei update')
 
             with self.condition:
                 self.local_changes = 0
@@ -208,18 +214,23 @@ class Replica:
 
         primary_socket.sendall(request_primary)
         message = self.ret_sockets[self.primary_copy_id].recv(MAX_MESSAGE_SIZE_RECV)
+        if not message:
+            print('Other replica disconnected. Closing program...')
+            self.disconnect_all()
+            
         status = _unpack_status(message)
-        print('received permission')
-        if status == Status.OK.value:
-            self.update_primary_copy(self.id)
-            self._notify_primary_copy()
 
-            self.local_changes += 1
-            self._update_value(self.id, value)
-            print('Value updated')
-        
-        else:
-            print('You can not alter the value')
+        with self.lock:
+            if status == Status.OK.value:
+                self.update_primary_copy(self.id)
+                self._notify_primary_copy()
+
+                self.local_changes += 1
+                self._update_value(self.id, value)
+                print('Value updated')
+            
+            else:
+                print('You can not alter the value')
 
 
     def change_value(self, new_value):
@@ -278,6 +289,7 @@ class Replica:
             ret_socket.close()
         
         self.listener_socket.close()
+        sys.exit()
 
 
 def print_instructions():
@@ -366,13 +378,9 @@ def main(id: int):
 
                 elif head == '/close':
                     replica.disconnect_all()
-                    sys.exit()
 
                 else:
                     print('Command not found')
-
-            else:
-                print('Outro')
 
 
 if __name__ == "__main__":
