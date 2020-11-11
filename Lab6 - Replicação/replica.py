@@ -206,6 +206,7 @@ class Replica:
 
     def update_primary_copy(self, primary_copy_id):
         self.primary_copy_id = primary_copy_id
+        print('Primary copy moved to', self.primary_copy_id)
 
     
     def _request_primary_copy(self, value):
@@ -235,7 +236,7 @@ class Replica:
             
             else: # in case you asked a replica that is no longer the primary
                 # also applies when you were not the first to request hat from primary replica
-                print('You can not alter the value')
+                print('You can not alter the value right now. Try again.')
 
 
     def change_value(self, new_value):
@@ -388,6 +389,7 @@ def main(id: int):
 
                 else:
                     print('Command not found')
+                    print_instructions()
 
 
 if __name__ == "__main__":
